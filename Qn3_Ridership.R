@@ -3,6 +3,9 @@
 # Load library
 pacman::p_load(forecast, tseries, fUnitRoots, tidyverse, fastDummies, lmtest)
 
+
+#testing ABC
+
 rider = read.csv("AmtrakBig_CA_Question-3.csv", stringsAsFactors = F)
 
 glimpse(rider)
