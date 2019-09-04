@@ -24,8 +24,11 @@ rider_ts
 
 
 # Split TS data for Train and Test (year 2016, 2017 & 2018 Jan-Mar)
-train = subset(rider_ts, end=length(rider_ts)-27)
-test = subset(rider_ts, start=length(rider_ts)-26)
+#train = subset(rider_ts, end=length(rider_ts)-27)
+#test = subset(rider_ts, start=length(rider_ts)-26)
+train = window(rider_ts, start = c(2010, 1), end = c(2015, 12))
+test = window(rider_ts, start = c(2016, 1), end = c(2018, 3))
+
 
 autoplot(rider_ts) ; cycle(rider_ts)
 autoplot(train) ; cycle(train)
@@ -45,7 +48,7 @@ decompose(rider_ts) %>% plot()
 # Try MA(1)
 
 ndiffs(train)
-nsdiffs(train)
+nsdiffs(ndiffs(train))
 # Simulate the order of differencing
 
 # Train dataset
