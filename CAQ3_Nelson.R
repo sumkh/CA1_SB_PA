@@ -26,8 +26,8 @@ fitAutoArima_all
 
 #only on uptrend
 
-training2 = window(uptrend, end = end(uptrend)-16/12)
-test2 = window(uptrend, start = end(uptrend)- 16/12)
+training2 = window(uptrend, end = c(2015,12))
+test2 = window(uptrend, start = c(2016,1))
 
 fitAutoArima_up = auto.arima(training2)
 fitAutoArima_up
@@ -55,7 +55,6 @@ errorcalc = function(fit,test){
 fitlist = list(fitAutoArima_up,fitArima011011, fitets)
 error_list = as.data.frame(t(sapply(fitlist,'errorcalc')))
 fitrows = c('AutoArima','Arima011011','ets')
-names(error_list) = errornames
 error_list$Fits <- as.factor(fitrows)
 
 #plot the errors
@@ -65,7 +64,7 @@ error_list %>%
   geom_bar(aes(fill = Fits), stat = 'identity', position = 'dodge') + 
   labs(title = "Errors on train set")
 
-autoplot(window(amtrakts, start = c(2014,1))) +
+autoplot(window(amtrakts, start = c(2010,1))) +
   autolayer(forecast(fitAutoArima_up,length(test2)), series = "AutoArima", PI=FALSE) +
   autolayer(forecast(fitArima011011,length(test2)), series = "Arima011011", PI = FALSE) +
   autolayer(forecast(fitets,length(test2)), series = "ets", PI = FALSE)
@@ -78,4 +77,40 @@ fcerrors %>%
   ggplot(aes(x=variable, y = value)) + 
   geom_bar(aes(fill = Fits), stat = 'identity', position = 'dodge') + 
   labs(title = "Errors on test set")
-               
+
+## Run all arima models for selection
+runarima = function(training, a, d){
+  fit = Arima(training, c(a[1],a[2],a[3]), seasonal = c(a[4],a[5],a[6]))
+  return(fit)
+}
+
+## Create an arima model for each of them
+arimalist = list()
+for (i in 1:nrow(arima_para)) {
+  tryCatch( {
+    arimalist[[i]] <- runarima(training2,as.numeric(arima_para[i,]),1)
+  },
+  error = function(cond) {
+    return(NA)
+  }
+  )
+}
+
+nullvals = !sapply(arimalist, is.null)
+fitlist_nonull = arimalist[nullvals]
+para_nonull = arima_para[nullvals,]
+
+aicc = list()
+for (i in 1:length(fitlist_nonull)) {
+  aicc[[i]] <- fitlist_nonull[[i]][["aicc"]]
+}
+
+aicc = as.numeric(aicc)
+chosenmodel = fitlist_nonull[[ind]]
+
+fc1 = forecast(chosenmodel, 27)
+fcerrors = as.data.frame(t(sapply(fitlist_nonull,'errorcalc',test2)))
+
+#checkparameters of optimized model
+para_nonull[which.min(fcerrors$RMSE),]
+para_nonull[which.min(fcerrors$MASE),]
