@@ -85,6 +85,7 @@ runarima = function(training, a, d){
 }
 
 ## Create an arima model for each of them
+arima_para = expand.grid(rep(list(0:2), 6))
 arimalist = list()
 for (i in 1:nrow(arima_para)) {
   tryCatch( {
@@ -106,9 +107,6 @@ for (i in 1:length(fitlist_nonull)) {
 }
 
 aicc = as.numeric(aicc)
-chosenmodel = fitlist_nonull[[ind]]
-
-fc1 = forecast(chosenmodel, 27)
 fcerrors = as.data.frame(t(sapply(fitlist_nonull,'errorcalc',test2)))
 
 #checkparameters of optimized model
