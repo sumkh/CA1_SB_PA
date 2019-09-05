@@ -153,7 +153,7 @@ corrplot::corrplot(cor(loans_df[, sapply(loans_df, is.numeric)],
 inspectdf::inspect_cat(loans_df) %>% show_plot()
 inspect_num(loans_df) %>% show_plot()
 
-write.csv(loans_df, "loans_df.csv")
+write.csv(loans_df, "loans_df.csv", row.names = F)
 
 # Generating Reports with dlookr packages
 #loans_df %>% diagnose_report(output_format = "html", output_file = "Diagn.html", output_dir = ".")
