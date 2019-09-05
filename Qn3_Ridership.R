@@ -24,8 +24,11 @@ rider_ts
 
 
 # Split TS data for Train and Test (year 2016, 2017 & 2018 Jan-Mar)
-train = subset(rider_ts, end=length(rider_ts)-27)
-test = subset(rider_ts, start=length(rider_ts)-26)
+#train = subset(rider_ts, end=length(rider_ts)-27)
+#test = subset(rider_ts, start=length(rider_ts)-26)
+train = window(rider_ts, start = c(2010, 1), end = c(2015, 12))
+test = window(rider_ts, start = c(2016, 1), end = c(2018, 3))
+
 
 autoplot(rider_ts) ; cycle(rider_ts)
 autoplot(train) ; cycle(train)
@@ -44,6 +47,9 @@ decompose(rider_ts) %>% plot()
 # Try AR(1)
 # Try MA(1)
 
+ndiffs(train)
+nsdiffs(ndiffs(train))
+# Simulate the order of differencing
 
 # Train dataset
 # Making Trend Stationary with Differencing
@@ -189,11 +195,21 @@ model_ETS %>%
 # Predicting against Test data
 pred_model_111_011 = predict(test, model = model_111_011)
 pred_model_111_111 = predict(test, model = model_111_111)
-pred_model_ETS = predict(test, model = model_ETS)
+pred_model_ETS = predict(test, model = model_ETS ,use.initial.values=TRUE)
+
 
 accuracy(pred_model_111_011)
 accuracy(pred_model_111_111)
 accuracy(pred_model_ETS)
+
+model_list = list(model_111_011=model_111_011, model_111_111=model_111_111, model_ETS=model_ETS) %>%
+  enframe(name = 'modelName',value = 'model')
+
+model_list$pred = list(pred_model_111_011, pred_model_111_111, pred_model_ETS)
+
+#accuracy(model_list$pred[[1]])
+#map(model_list$pred, accuracy)
+#summary(model_list$model[[3]])
 
 
 # pre_model_111_011 has the lowest errors measures except for RMSE
