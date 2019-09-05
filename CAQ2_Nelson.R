@@ -1,3 +1,4 @@
+
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr)
 
 #setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
@@ -261,9 +262,3 @@ trainset %>%
 trainset %>%
   group_by(targetloanstatus) %>%
   count()
-
-
-
-
-
-
