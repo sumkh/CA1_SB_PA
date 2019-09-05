@@ -2,7 +2,7 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr)
 
 #setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
-setwd("~/WorkDirectory")
+#setwd("~/WorkDirectory")
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
 summary(loans_all)
@@ -160,7 +160,24 @@ loans_df %>%
              output_file = "EDA.html", 
              output_dir = ".")
 
+# Modelling ------------------------------------------------------------------#
 
+#set initial seed for reproducibility
+set.seed(123)
+# collect the data indices returned in a list
+inds = createDataPartition(loans_df$targetloanstatus, p=0.7, list=FALSE,times=1) 
+
+train_set = loans_df[inds,]
+nrow(train_set)/nrow(loans_df)
+dim(train_set)
+
+test_set = loans_df[-inds,]
+nrow(test_set)/nrow(loans_df)
+
+write.csv(loans_df, "loans_df.csv")
+
+
+# ------------------------------------------------------------------#
 
 # Modelling ------------------------------------------------------------------#
 
@@ -262,3 +279,4 @@ trainset %>%
 trainset %>%
   group_by(targetloanstatus) %>%
   count()
+
