@@ -102,7 +102,7 @@ table(loans$homeowner, loans$homeownership)
 # install.packages("dlookr")
 # library(dlookr)
 loans$annualinc_bin = dlookr::binning(loans$annualinc, nbins = 5, type = "quantile", 
-                                      ordered = T)
+                                      ordered = T, labels = paste0("Gp",seq(1:5)))
 table(loans$annualinc_bin, useNA = "always")
 class(loans$annualinc_bin)
 str(loans$annualinc_bin)
@@ -113,7 +113,7 @@ loans %>%
 
 # Binning the revolbal
 loans$revolbal_bin = dlookr::binning(loans$revolbal, nbins = 5, type = "quantile", 
-                                     ordered = T)
+                                     ordered = T, labels = paste0("Gp",seq(1:5)))
 
 table(loans$revolbal_bin, useNA = "always")
 class(loans$revolbal_bin)
