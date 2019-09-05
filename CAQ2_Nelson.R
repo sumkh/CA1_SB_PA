@@ -15,9 +15,9 @@ glimpse(loans)
 summary(loans)
 
 # Inspecting the Variables
-install.packages("inspectdf")
+# install.packages("inspectdf")
 library("inspectdf")
-inspectdf::inspect_cat(loans) %>% show_plot()
+inspect_cat(loans) %>% show_plot()
 inspect_num(loans_all) %>% show_plot()
 
 # code dependent variable target loan status as factor and plot graph
@@ -100,7 +100,7 @@ table(loans$homeowner, loans$homeownership)
 
 # Binning annualinc
 # install.packages("dlookr")
-library(dlookr)
+# library(dlookr)
 loans$annualinc_bin = dlookr::binning(loans$annualinc, nbins = 5, type = "quantile", 
                                       ordered = T)
 table(loans$annualinc_bin, useNA = "always")
@@ -138,27 +138,27 @@ loans %>%
 
 
 # Factorise catagorical variables
-loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")] = 
+loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose_mod")] = 
   lapply(loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")], as.factor)
 
 # Selecting Features for Modelling
-loans_df = select(loans, -c("id","homeownership","annualinc","verificationstatus","delinq2yrs"))
+loans_df = select(loans, -c("id","homeownership","annualinc","verificationstatus","delinq2yrs", "purpose"))
 glimpse(loans_df)
 
 # Visualisation of Correlation of Numerical Variables
 corrplot::corrplot(cor(loans_df[, sapply(loans_df, is.numeric)],
                        use="complete.obs"), method = "number", type='lower')
 
-# Generating Reports with dlookr packages
-loans_df %>%
-  diagnose_report(output_format = "html", 
-                  output_file = "Diagn.html", 
-                  output_dir = ".")
 
-loans_df %>%
-  eda_report(target = targetloanstatus, output_format = "html", 
-             output_file = "EDA.html", 
-             output_dir = ".")
+inspectdf::inspect_cat(loans_df) %>% show_plot()
+inspect_num(loans_df) %>% show_plot()
+
+write.csv(loans_df, "loans_df.csv")
+
+# Generating Reports with dlookr packages
+#loans_df %>% diagnose_report(output_format = "html", output_file = "Diagn.html", output_dir = ".")
+
+#loans_df %>% eda_report(target = targetloanstatus, output_format = "html", output_file = "EDA.html", output_dir = ".")
 
 # Modelling ------------------------------------------------------------------#
 
@@ -174,7 +174,6 @@ dim(train_set)
 test_set = loans_df[-inds,]
 nrow(test_set)/nrow(loans_df)
 
-write.csv(loans_df, "loans_df.csv")
 
 
 # ------------------------------------------------------------------#
