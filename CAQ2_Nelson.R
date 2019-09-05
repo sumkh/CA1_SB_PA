@@ -111,6 +111,19 @@ loans %>%
   group_by(annualinc_bin) %>%
   summarise(min(annualinc), max(annualinc))
 
+# Binning the revolbal
+loans$revolbal_bin = dlookr::binning(loans$revolbal, nbins = 5, type = "quantile", 
+                                     ordered = T)
+
+table(loans$revolbal_bin, useNA = "always")
+class(loans$revolbal_bin)
+str(loans$revolbal_bin)
+
+loans %>% 
+  group_by(revolbal_bin) %>%
+  summarise(min(revolbal), max(revolbal))
+
+
 # Recoding verification status
 table(loans$verificationstatus, useNA = "always")
 loans$verified = factor(ifelse(loans$verificationstatus == "Not Verified", "N","Y"))
@@ -142,7 +155,7 @@ loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetl
   lapply(loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")], as.factor)
 
 # Selecting Features for Modelling
-loans_df = select(loans, -c("id","homeownership","annualinc","verificationstatus","delinq2yrs", "purpose"))
+loans_df = select(loans, -c("id","homeownership","annualinc", "revolbal","verificationstatus","delinq2yrs", "purpose"))
 glimpse(loans_df)
 
 # Visualisation of Correlation of Numerical Variables
@@ -150,7 +163,7 @@ corrplot::corrplot(cor(loans_df[, sapply(loans_df, is.numeric)],
                        use="complete.obs"), method = "number", type='lower')
 
 
-inspectdf::inspect_cat(loans_df) %>% show_plot()
+inspect_cat(loans_df) %>% show_plot()
 inspect_num(loans_df) %>% show_plot()
 
 write.csv(loans_df, "loans_df.csv", row.names = F)
