@@ -1,5 +1,5 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr)
-
+# testing
 setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
