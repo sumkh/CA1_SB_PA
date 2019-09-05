@@ -175,23 +175,90 @@ write.csv(loans_df, "loans_df.csv", row.names = F)
 
 # Modelling ------------------------------------------------------------------#
 
+#Create our training set using stratified sampling.
 #set initial seed for reproducibility
 set.seed(123)
 # collect the data indices returned in a list
 inds = createDataPartition(loans_df$targetloanstatus, p=0.7, list=FALSE,times=1) 
 
-train_set = loans_df[inds,]
-nrow(train_set)/nrow(loans_df)
-dim(train_set)
+loan_dftrain = loans_df[inds,]
+nrow(loan_dftrain)/nrow(loans_df)
+dim(loan_dftrain)
 
-test_set = loans_df[-inds,]
-nrow(test_set)/nrow(loans_df)
+loan_dftest = loans_df[-inds,]
+nrow(loan_dftest)/nrow(loans_df)
+
+# use caret to upsample the dataset ------------------------------------------#
+loan_dfUP = upSample(loans_df, y = as.factor(loans_df$targetloanstatus), list = FALSE, yname = "loanstatus")
+glimpse(loan_dfUP)
+table(loan_dfUP$loanstatus)
+table(loan_dfUP$targetloanstatus)
+
+write.csv(loan_dfUP, "loans_dfUP.csv", row.names = F)
+
+
+set.seed(123)
+# collect the data indices returned in a list
+indsUP = createDataPartition(loan_dfUP$loanstatus, p=0.7, list=FALSE,times=1) 
+
+loan_dftrainUP = loan_dfUP[indsUP,]
+nrow(loan_dftrainUP)/nrow(loan_dfUP)
+dim(loan_dftrainUP)
+
+loan_dftestUP = loan_dfUP[-indsUP,]
+nrow(loan_dftestUP)/nrow(loan_dfUP)
+
+
+
+# use caret to downsample the dataset ------------------------------------------#
+loan_dfDN = downSample(loans_df, y = as.factor(loans_df$targetloanstatus), list = FALSE, yname = "loanstatus")
+glimpse(loan_dfDN)
+table(loan_dfDN$loanstatus)
+table(loan_dfDN$targetloanstatus)
+
+write.csv(loan_dfDN, "loan_dfDN.csv", row.names = F)
+
+
+set.seed(123)
+# collect the data indices returned in a list
+indsDN = createDataPartition(loan_dfDN$loanstatus, p=0.7, list=FALSE,times=1) 
+
+loan_dftrainDN = loan_dfDN[indsDN,]
+nrow(loan_dftrainDN)/nrow(loan_dfDN)
+dim(loan_dftrainDN)
+
+loan_dftestDN = loan_dfDN[-indsDN,]
+nrow(loan_dftestDN)/nrow(loan_dfDN)
+
+# ------------------------------------------------------------------#
+
+
+
 
 
 
 # ------------------------------------------------------------------#
 
 # Modelling ------------------------------------------------------------------#
+
+set.seed(42)
+
+#using sample_n to downsample.
+trainset = loans %>%
+  group_by(targetloanstatus) %>%
+  sample_n(3000)
+
+# use caret to downsample.
+trainset_caret = caret::downSample(loans, y = as.factor(loans$targetloanstatus), list = FALSE, yname = "default")
+
+# create dummy variables
+dummies_train <- dummyVars("~. -id -targetloanstatus", data = trainset_caret, 
+                           fullRank = FALSE)
+
+train_down_dummy <-
+  trainset_caret %>%
+  select(-grade) %>%
+  cbind(predict(dummies_train, newdata = trainset_caret))
 
 #assume that targetloanstatus defines defaults -> defaulted loans: targetloanstatus == 1
 glimpse(loans)
@@ -241,25 +308,6 @@ p5 = loans %>%
 
 ggarrange(p1,p2,p3, p4, nrow = 2, ncol = 2)
 
-# 36036 non default cases and 6409 default cases. 89% chance of non-default. Create our training set using stratified sampling.
-set.seed(42)
-
-#using sample_n to downsample.
-trainset = loans %>%
-  group_by(targetloanstatus) %>%
-  sample_n(3000)
-
-# use caret to downsample.
-trainset_caret = caret::downSample(loans, y = as.factor(loans$targetloanstatus), list = FALSE, yname = "default")
-
-# create dummy variables
-dummies_train <- dummyVars("~. -id -targetloanstatus", data = trainset_caret, 
-            fullRank = FALSE)
-
-train_down_dummy <-
-  trainset_caret %>%
-  select(-grade) %>%
-  cbind(predict(dummies_train, newdata = trainset_caret))
 
 #glm model
 model1 = trainset_caret %>%
