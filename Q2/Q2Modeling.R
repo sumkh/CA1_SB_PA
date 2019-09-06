@@ -4,6 +4,7 @@ setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
 #setwd("~/WorkDirectory")
 
 loans_df = read.csv("cleanedloans.csv",stringsAsFactors = TRUE)
+loans_df$targetloanstatus = as.factor(loans_df$targetloanstatus)
 
 # Modelling ------------------------------------------------------------------#
 
@@ -27,7 +28,8 @@ loan_dftrain %>%
 
 loan_dftrain %>%
   group_by(targetloanstatus) %>%
-  count()
+  count() %>%
+  mutate(perc = n/nrow(loan_dftrain))
 
 # use caret to upsample the train dataset ------------------------------------#
 loan_dftrainUP = upSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
@@ -35,17 +37,14 @@ glimpse(loan_dftrainUP)
 table(loan_dftrainUP$loanstatus, loan_dftrainUP$targetloanstatus)
 loan_dftrainUP = select(loan_dftrainUP, -"loanstatus") # remove redundent variable loanstatus
 
-write.csv(loan_dftrainUP, "loan_dftrainUP.csv", row.names = F)
-
-
+# write.csv(loan_dftrainUP, "loan_dftrainUP.csv", row.names = F)
 # use caret to downsample the train dataset ----------------------------------#
 loan_dftrainDN = downSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
 glimpse(loan_dftrainDN)
 table(loan_dftrainDN$loanstatus, loan_dftrainDN$targetloanstatus)
 loan_dftrainDN = select(loan_dftrainDN, -"loanstatus") # remove redundent variable loanstatus
 
-write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
-
+# write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
 #-----------------------------------------------------------------------------#
 
 # Develop model
@@ -59,9 +58,10 @@ vif(loan_dfglm)
 
 # vif >10  for loanamnt, intrate, installment indicating high multicollinearity
 
-# try using step function 
+# try using step function, step function tries to optimize a lm/glm model by automatically add/dropping relevant indep variables.
 loan_dfglm2 = step(loan_dfglm, trace = F)
 summary(loan_dfglm2)
+
 
 vif(loan_dfglm2)
 
@@ -69,6 +69,7 @@ vif(loan_dfglm2)
 
 attach(loan_dfglm2)
 pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)
+anova
 detach(loan_dfglm2)
 # p value = 0 - correct??
 # use anova instead
@@ -76,12 +77,7 @@ anova(loan_dfglm2, test="Chisq")
 
 # verify on test set
 pdataglm <- predict(loan_dfglm2, newdata = loan_dftest, type = "response")
-p_class = ifelse(pdataglm > 0.5, 1,0)
-matrix_table = table(loan_dftest$targetloanstatus, p_class)
-matrix_table 
-
-accuracyglm = sum(diag(matrix_table))/sum(matrix_table)
-round(accuracyglm, 3)
+confusionMatrix(data = as.factor(as.numeric(pdataglm>0.5)), reference = loan_dftest$targetloanstatus)
 
 # accuracy = 0.851
 
