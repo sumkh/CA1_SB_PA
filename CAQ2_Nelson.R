@@ -233,11 +233,6 @@ set.seed(123)
 # collect the data indices returned in a list
 inds = createDataPartition(loans_df$targetloanstatus, p=0.7, list=FALSE,times=1) 
 
-# Updated upstream
-train_set = loans_df[inds,]
-nrow(train_set)/nrow(loans_df)
-dim(train_set)
-
 loan_dftrain = loans_df[inds,]
 nrow(loan_dftrain)/nrow(loans_df)
 dim(loan_dftrain)
@@ -254,47 +249,24 @@ loan_dftrain %>%
   group_by(targetloanstatus) %>%
   count()
 
-# use caret to upsample the dataset ------------------------------------------#
-loan_dfUP = upSample(loans_df, y = as.factor(loans_df$targetloanstatus), list = FALSE, yname = "loanstatus")
-glimpse(loan_dfUP)
-table(loan_dfUP$loanstatus)
-table(loan_dfUP$targetloanstatus)
+# use caret to upsample the train dataset ------------------------------------#
+loan_dftrainUP = upSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
+glimpse(loan_dftrainUP)
+table(loan_dftrainUP$loanstatus, loan_dftrainUP$targetloanstatus)
+loan_dftrainUP = select(loan_dftrainUP, -"loanstatus") # remove redundent variable loanstatus
 
-write.csv(loan_dfUP, "loans_dfUP.csv", row.names = F)
-
-
-set.seed(123)
-# collect the data indices returned in a list
-indsUP = createDataPartition(loan_dfUP$loanstatus, p=0.7, list=FALSE,times=1) 
-
-loan_dftrainUP = loan_dfUP[indsUP,]
-nrow(loan_dftrainUP)/nrow(loan_dfUP)
-dim(loan_dftrainUP)
-
-loan_dftestUP = loan_dfUP[-indsUP,]
-nrow(loan_dftestUP)/nrow(loan_dfUP)
+write.csv(loan_dftrainUP, "loan_dftrainUP.csv", row.names = F)
 
 
+# use caret to downsample the train dataset ----------------------------------#
+loan_dftrainDN = downSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
+glimpse(loan_dftrainDN)
+table(loan_dftrainDN$loanstatus, loan_dftrainDN$targetloanstatus)
+loan_dftrainDN = select(loan_dftrainDN, -"loanstatus") # remove redundent variable loanstatus
 
-# use caret to downsample the dataset ------------------------------------------#
-loan_dfDN = downSample(loans_df, y = as.factor(loans_df$targetloanstatus), list = FALSE, yname = "loanstatus")
-glimpse(loan_dfDN)
-table(loan_dfDN$loanstatus)
-table(loan_dfDN$targetloanstatus)
+write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
 
-write.csv(loan_dfDN, "loan_dfDN.csv", row.names = F)
-
-
-set.seed(123)
-# collect the data indices returned in a list
-indsDN = createDataPartition(loan_dfDN$loanstatus, p=0.7, list=FALSE,times=1) 
-
-loan_dftrainDN = loan_dfDN[indsDN,]
-nrow(loan_dftrainDN)/nrow(loan_dfDN)
-dim(loan_dftrainDN)
-
-loan_dftestDN = loan_dfDN[-indsDN,]
-nrow(loan_dftestDN)/nrow(loan_dfDN)
+#-----------------------------------------------------------------------------#
 
 # Develop model
 
@@ -385,7 +357,6 @@ round(accuracyrf, 3)
 # Build a Decision Tree model (WIP)
 
 library(rpart)
-
 loan_dfrpart <- rpart(targetloanstatus ~ .,
                       data=loan_dftrain,
                       method="class",
@@ -456,73 +427,4 @@ matrix_table3 = table(results)
 accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
 round(accuracyNN, 3)
 
-
-# use caret to upsample the dataset ------------------------------------------#
-loan_dfUP = upSample(loans_df, y = as.factor(loans_df$targetloanstatus), list = FALSE, yname = "loanstatus")
-glimpse(loan_dfUP)
-table(loan_dfUP$loanstatus)
-table(loan_dfUP$targetloanstatus)
-
-write.csv(loan_dfUP, "loans_dfUP.csv", row.names = F)
-
-
-set.seed(123)
-# collect the data indices returned in a list
-indsUP = createDataPartition(loan_dfUP$loanstatus, p=0.7, list=FALSE,times=1) 
-
-loan_dftrainUP = loan_dfUP[indsUP,]
-nrow(loan_dftrainUP)/nrow(loan_dfUP)
-dim(loan_dftrainUP)
-
-loan_dftestUP = loan_dfUP[-indsUP,]
-nrow(loan_dftestUP)/nrow(loan_dfUP)
-
-
-
-# use caret to downsample the dataset ------------------------------------------#
-loan_dfDN = downSample(loans_df, y = as.factor(loans_df$targetloanstatus), list = FALSE, yname = "loanstatus")
-glimpse(loan_dfDN)
-table(loan_dfDN$loanstatus)
-table(loan_dfDN$targetloanstatus)
-
-write.csv(loan_dfDN, "loan_dfDN.csv", row.names = F)
-
-
-set.seed(123)
-# collect the data indices returned in a list
-indsDN = createDataPartition(loan_dfDN$loanstatus, p=0.7, list=FALSE,times=1) 
-
-loan_dftrainDN = loan_dfDN[indsDN,]
-nrow(loan_dftrainDN)/nrow(loan_dfDN)
-dim(loan_dftrainDN)
-
-loan_dftestDN = loan_dfDN[-indsDN,]
-nrow(loan_dftestDN)/nrow(loan_dfDN)
-
-# ------------------------------------------------------------------#
-
-
-# Modelling ------------------------------------------------------------------#
-
-set.seed(123)
-
-#using sample_n to downsample.
-#trainset = loans %>%
-#  group_by(targetloanstatus) %>%
-#  sample_n(3000)
-
-
-# create dummy variables
-dummies_train <- dummyVars("~. -id -targetloanstatus", data = loan_dftrain, 
-                           fullRank = FALSE)
-
-train_down_dummy <-
-  loan_dftrain %>%
-  select(-grade) %>%
-  cbind(predict(dummies_train, newdata = loan_dftrain))
-
-#glm model
-model1 = loan_dftrain %>%
-  glm(default ~ revolutil + grade, data = ., family = binomial)
-summary(model1)
 
