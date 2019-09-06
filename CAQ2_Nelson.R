@@ -427,4 +427,4 @@ matrix_table3 = table(results)
 accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
 round(accuracyNN, 3)
 
-#Test
+
