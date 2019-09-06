@@ -5,6 +5,12 @@ setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
 summary(loans_all)
+loans_all = loans_all %>%
+  mutate(potl_profit = intrate*loanamnt,
+         loss = case_when(targetloanstatus == 0 ~ 0,
+                          targetloanstatus == 1 ~ as.double(loanamnt)),
+         profit = case_when(loss == 0 ~ potl_profit,
+                            loss != 0 ~ 0))
 
 # data exploration
 # check if all lines are filled
@@ -20,11 +26,7 @@ inspect_cat(loans) %>% show_plot()
 inspect_num(loans_all) %>% show_plot()
 
 # code dependent variable target loan status as factor and plot graph
-loans$targetloanstatus <- factor(loans$targetloanstatus, levels = c("0", "1"),
-                                 labels = c("No Default", "Default"))
-
-# check for the 0 and 1 using contrasts
-contrasts(loans$targetloanstatus)
+loans$targetloanstatus <- as.factor(loans$targetloanstatus)
 
 loans %>%
   group_by(targetloanstatus)%>%
@@ -34,7 +36,6 @@ loans %>%
   geom_text(aes(label = round(per, 2)), vjust = 2) + labs(fill = "Loan Status", title = "Summary of Current Loan Status", x = "Loan Status", y = "Percentage")
 
 # 15% of borrowers defaulted on loan
-
 # Plot loan status against term
 
 loans %>%
@@ -83,6 +84,19 @@ loans %>%
   count(creditpolicy) %>%
   mutate(perc = n/sum(n))
 
+loans %>%
+  group_by(grade, targetloanstatus) %>%
+  summarize(sum = sum(potl_profit)) %>%
+  ungroup() %>%
+  mutate(perc = sum/sum(sum))
+
+loans %>%
+  group_by(grade) %>%
+  summarize(profits = sum(profit), losses = sum(loss), potentialprofits = sum(potl_profit), profitperloss = profits/losses) %>%
+  melt(id.vars = "grade") %>%
+  ggplot(aes(x = grade)) + 
+  geom_col(aes(y = value, fill = variable), position = "dodge") + facet_wrap(~variable, scales = "free_y")
+
 #this is to compute percentage default against ordinal variables.
 p1 = loans %>%
   group_by(grade) %>%
@@ -98,8 +112,8 @@ p2 = loans %>%
 
 p3 = loans %>%
   ggplot(aes(x = targetloanstatus)) +
-  geom_boxplot(aes(y=annualinc), outlier.shape = NA) + facet_grid(~grade) + 
-  scale_y_continuous(limits = c(0,150000))
+  geom_boxplot(aes(y=potl_profit), outlier.shape = NA) + facet_grid(~grade) + 
+  scale_y_continuous(limits = c(0,10000))
 
 #ggdensity plot for continuous variables
 p4 = loans %>%

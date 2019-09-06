@@ -4,14 +4,18 @@ setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
 #setwd("~/WorkDirectory")
 
 loans_df = read.csv("cleanedloans.csv",stringsAsFactors = TRUE)
+loans_df$targetloanstatus = as.factor(loans_df$targetloanstatus)
 
+loans_df = loans_df %>%
+  filter(grade == "B") %>%
+  select(-profit, -loss, -grade)
 # Modelling ------------------------------------------------------------------#
 
 #Create our training set using stratified sampling.
 #set initial seed for reproducibility
 set.seed(123)
 # collect the data indices returned in a list
-inds = createDataPartition(loans_df$targetloanstatus, p=0.7, list=FALSE,times=1) 
+inds = createDataPartition(1:nrow(loans_df), p=0.7, list=FALSE,times=1) 
 
 loan_dftrain = loans_df[inds,]
 nrow(loan_dftrain)/nrow(loans_df)
@@ -27,7 +31,8 @@ loan_dftrain %>%
 
 loan_dftrain %>%
   group_by(targetloanstatus) %>%
-  count()
+  count() %>%
+  mutate(perc = n/nrow(loan_dftrain))
 
 # use caret to upsample the train dataset ------------------------------------#
 loan_dftrainUP = upSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
@@ -35,17 +40,14 @@ glimpse(loan_dftrainUP)
 table(loan_dftrainUP$loanstatus, loan_dftrainUP$targetloanstatus)
 loan_dftrainUP = select(loan_dftrainUP, -"loanstatus") # remove redundent variable loanstatus
 
-write.csv(loan_dftrainUP, "loan_dftrainUP.csv", row.names = F)
-
-
+# write.csv(loan_dftrainUP, "loan_dftrainUP.csv", row.names = F)
 # use caret to downsample the train dataset ----------------------------------#
 loan_dftrainDN = downSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
 glimpse(loan_dftrainDN)
 table(loan_dftrainDN$loanstatus, loan_dftrainDN$targetloanstatus)
 loan_dftrainDN = select(loan_dftrainDN, -"loanstatus") # remove redundent variable loanstatus
 
-write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
-
+# write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
 #-----------------------------------------------------------------------------#
 
 # Develop model
@@ -53,13 +55,13 @@ write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
 # Logistic Regression model
 
 loan_dfglm <- glm(formula = targetloanstatus ~ .,
-                  family=binomial,  data=loan_dftrain)
+                  family=binomial,  data=loan_dftrainDN)
 summary(loan_dfglm)
 vif(loan_dfglm)
 
 # vif >10  for loanamnt, intrate, installment indicating high multicollinearity
 
-# try using step function 
+# try using step function, step function tries to optimize a lm/glm model by automatically add/dropping relevant indep variables.
 loan_dfglm2 = step(loan_dfglm, trace = F)
 summary(loan_dfglm2)
 
@@ -69,6 +71,7 @@ vif(loan_dfglm2)
 
 attach(loan_dfglm2)
 pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)
+anova
 detach(loan_dfglm2)
 # p value = 0 - correct??
 # use anova instead
@@ -76,37 +79,59 @@ anova(loan_dfglm2, test="Chisq")
 
 # verify on test set
 pdataglm <- predict(loan_dfglm2, newdata = loan_dftest, type = "response")
-p_class = ifelse(pdataglm > 0.5, 1,0)
-matrix_table = table(loan_dftest$targetloanstatus, p_class)
-matrix_table 
+#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
+confusionMatrix(data = as.factor(as.numeric(pdataglm>0.7)), reference = loan_dftest$targetloanstatus)
 
-accuracyglm = sum(diag(matrix_table))/sum(matrix_table)
-round(accuracyglm, 3)
-
+library(pROC)
+#roc syntax: (actual results, predicted probabilities)
+roc_glm = roc(as.numeric(loan_dftest$targetloanstatus),pdataglm)
 # accuracy = 0.851
 
-# Build a Random Forest model 
+# Build a Random Forest model. This takes a while.
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+model2 = train(targetloanstatus ~. , data = loan_dftrainDN, model = "rf", metric = "Accuracy", trControl = control)
 
-library(randomForest)
-library(pROC)
-loan_dfrf <- randomForest::randomForest(targetloanstatus ~ .,
-                                        data=loan_dftrain, 
-                                        ntree=500,
-                                        mtry=4,
-                                        importance=TRUE,
-                                        na.action=randomForest::na.roughfix,
-                                        replace=FALSE)
+# Build an adaboost model.
+library(adabag)
+library(plyr)
+library(dplyr)
+#grid is the tuning parameters
+
+loan_dftrainDNada = loan_dftrainDN  %>% 
+  mutate(targetloanstatus = factor(targetloanstatus, 
+                        labels = make.names(levels(targetloanstatus))))
+
+grid <- expand.grid(mfinal = (1:3)*3, maxdepth = c(1, 3),
+                    coeflearn = c("Breiman", "Freund", "Zhu"))
+seeds <- vector(mode = "list", length = nrow(loan_dftrainDN) + 1)
+seeds <- lapply(seeds, function(x) 1:20)
+#train control is the kfolds resampling methods.
+cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
+                       classProbs = TRUE, 
+                       summaryFunction = twoClassSummary, 
+                       seeds = seeds)
+
+model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada, 
+                            method = "AdaBoost.M1",
+                            tuneGrid = grid, 
+                            trControl = cctrl1,
+                            metric = "ROC", 
+                            preProc = c("center", "scale"))
 
 # Generate textual output of the 'Random Forest' model.
 
 loan_dfrf
-
-# The `pROC' package implements various AUC functions.
+pred2 = predict(model2, loan_dftest, type = "prob")
+roc_rf = roc(as.numeric(loan_dftest$targetloanstatus),pred2$"1")
+plot(roc_glm, print.auc = TRUE)
+plot(roc_rf, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
 
 # Calculate the Area Under the Curve (AUC).
 
-pROC::roc(loan_dfrf$y, as.numeric(loan_dfrf$predicted))
-
+pred3 = predict(model3,loan_dftest,type = "prob")
+roc_ada = roc(as.numeric(loan_dftest$targetloanstatus),pred3$"X1")
+plot(roc_ada, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+legend(0.2,0.2, legend = c("GLM","RF","ada"),col=c("black", "green","red"), lty=1, cex=0.8)
 # AUC = 0.5066
 
 # Calculate the AUC Confidence Interval.
