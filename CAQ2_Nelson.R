@@ -123,22 +123,25 @@ ggarrange(p1,p2,p3, p4, nrow = 2, ncol = 2)
 
 #-----------------------------------------------------------------------------#
 
-# clean emplength and term lines
+# clean emplength
 table(loans$term, useNA = "always")
-loans$term %>%
-  str_extract("\\d{1,2}") -> loans$term
+#loans$term %>%
+#  str_extract("\\d{1,2}") -> loans$term
+loans$term = str_remove_all(loans$term, "\\s")
+
 
 table(loans$emplength, useNA = "always")
 loans$emplength %>%
   str_replace("< 1", "0") %>%
   str_extract("\\d{1,2}") -> loans$emplength
-loans[,c("term","emplength")] = 
-  lapply(loans[,c("term","emplength")], as.integer)
+loans$emplength = as.numeric(loans$emplength)
 loans = na.omit(loans)
 
 # Create 2 new variables for emp10years and delinq2ears
 loans = loans %>%
   mutate(emp10years = as.factor(case_when(emplength > 9 ~ "Y",
+                                          emplength <= 9 ~ "N")),
+         emp10years = as.factor(case_when(emplength > 9 ~ "Y",
                                           emplength <= 9 ~ "N")),
          delin2years = factor(case_when(delinq2yrs > 0 ~ "Y",
                                         delinq2yrs == 0 ~ "N")),
@@ -157,6 +160,7 @@ loans$annualinc_bin = dlookr::binning(loans$annualinc, nbins = 5, type = "quanti
                                       ordered = T, labels = paste0("Gp",seq(1:5)))
 table(loans$annualinc_bin, useNA = "always")
 class(loans$annualinc_bin)
+loans$annualinc_bin = as.character(loans$annualinc_bin)
 str(loans$annualinc_bin)
 
 loans %>% 
@@ -169,6 +173,7 @@ loans$revolbal_bin = dlookr::binning(loans$revolbal, nbins = 5, type = "quantile
 
 table(loans$revolbal_bin, useNA = "always")
 class(loans$revolbal_bin)
+loans$revolbal_bin = as.character(loans$revolbal_bin)
 str(loans$revolbal_bin)
 
 loans %>% 
@@ -201,13 +206,25 @@ loans %>%
   geom_bar(stat = 'identity') +
   labs(title="Purpose", x = "Purpose", y = "Number", fill = "Loan Status")
 
+# creditpolicy
+table(loans$creditpolicy)
+loans$creditpolicy = factor(as.character(loans$creditpolicy), levels = c("0","1"), labels = c("N","Y"))
+contrasts(loans$creditpolicy)
+table(loans$creditpolicy)
 
-# Factorise catagorical variables
-loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose_mod")] = 
-  lapply(loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")], as.factor)
+# Converting catagorical variables as characters
+glimpse(loans)
+loans = loans %>% mutate_if(is.factor, as.character)
+
 
 # Selecting Features for Modelling
 loans_df = select(loans, -c("id","homeownership","annualinc", "revolbal","verificationstatus","delinq2yrs", "purpose"))
+
+# Factorise catagorical variables
+loans_df$targetloanstatus = str_remove_all(loans_df$targetloanstatus, "\\s")
+loans_df$targetloanstatus = factor(loans_df$targetloanstatus, levels = c("NoDefault", "Default"))
+loans_df = loans_df %>% mutate_if(is.character, as.factor)
+
 glimpse(loans_df)
 
 # Visualisation of Correlation of Numerical Variables
