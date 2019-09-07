@@ -125,8 +125,10 @@ loans = loans %>% mutate_if(is.factor, as.character)
 # Selecting Features for Modelling
 loans_df = select(loans, -c("id","homeownership","annualinc", "revolbal","verificationstatus","delinq2yrs", "purpose"))
 
+
 # Factorise catagorical variables
-loans_df$targetloanstatus = factor(loans_df$targetloanstatus, levels = c("No_Default", "Default"))
+loans_df$targetloanstatus = str_remove_all(loans_df$targetloanstatus, "\\s")
+loans_df$targetloanstatus = factor(loans_df$targetloanstatus, levels = c("NoDefault", "Default"))
 loans_df = loans_df %>% mutate_if(is.character, as.factor)
 
 glimpse(loans_df)
