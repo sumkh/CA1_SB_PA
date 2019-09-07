@@ -20,8 +20,7 @@ inspect_cat(loans) %>% show_plot()
 inspect_num(loans_all) %>% show_plot()
 
 # code dependent variable target loan status as factor and plot graph
-loans$targetloanstatus <- factor(loans$targetloanstatus, levels = c("0", "1"),
-                                 labels = c("No Default", "Default"))
+loans$targetloanstatus <- as.factor(loans$targetloanstatus)
 
 # check for the 0 and 1 using contrasts
 contrasts(loans$targetloanstatus)
@@ -34,7 +33,6 @@ loans %>%
   geom_text(aes(label = round(per, 2)), vjust = 2) + labs(fill = "Loan Status", title = "Summary of Current Loan Status", x = "Loan Status", y = "Percentage")
 
 # 15% of borrowers defaulted on loan
-
 # Plot loan status against term
 
 loans %>%
