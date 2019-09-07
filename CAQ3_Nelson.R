@@ -9,8 +9,18 @@ head(amtrak)
 
 amtrakts = ts(amtrak$Ridership, start = c(2005,1), frequency = 12)
 amtrakts
-autoplot(amtrakts)
-
+autoplot(amtrakts) + 
+  annotate("rect", xmin = 2008, xmax = 2011, ymin = 1200, ymax = 2500,
+           alpha = .2, fill = "yellow") +
+  annotate("rect", xmin = 2010, xmax = 2016, ymin = 1200, ymax = 2500,
+           alpha = .1, fill = "blue") + 
+  annotate("rect", xmin = 2016, xmax = 2018.25, ymin = 1200, ymax = 2500,
+           alpha = .2, fill = "blue") + 
+  scale_x_continuous(breaks = seq(2005, 2019, by = 1)) +
+  annotate("segment", x = 2010, y = 2500, xend = 2018.25, yend = 2500, arrow = arrow(ends = "both", type = "open")) +
+  annotate("segment", x = 2008, y = 1800, xend = 2011, yend = 1500, color = "red", arrow = arrow(length = unit(0.25, "cm"), type = "closed")) +
+  annotate("text", x = c(2009.5,2013,2017.15, 2014), y = c(2400,2400,2400,2550), label = c("Declining Trend","Training Data","Test Data","Modelling Data"), size = 8)
+plot(decompose(amtrakts))
 #there is yearly seasonality. and uptrend starts at 2010.
 
 uptrend = window(amtrakts, start = c(2010,1))
@@ -40,6 +50,7 @@ nsdiffs(uptrend)
 training = window(uptrend, end = c(2015,12))
 test = window(uptrend, start = c(2016,1))
 
+#compute errors and return as a vector for comparison.
 errorcalc = function(fit,test){
   #test is the ts you want to test against
   if (missing(test)) {
@@ -64,7 +75,8 @@ runarima = function(training, a, d){
   }
 }
 
-## Create an arima model for each of them, given that d,D = 1.
+# Create an arima model for each of them, given that d,D = 1.
+#run total of 81 sets of parameters for p,q,P,Q %in% 0:2
 arima_para = expand.grid(rep(list(0:2), 4))
 arimalist = list()
 for (i in 1:nrow(arima_para)) {
@@ -77,6 +89,7 @@ for (i in 1:nrow(arima_para)) {
   )
 }
 
+#Check null models. These are models that might be unstable and couldn't be built (no suitable parameters found)
 nullvals = !sapply(arimalist, is.null)
 fitlist_nonull = arimalist[nullvals]
 para_nonull = arima_para[nullvals,]
@@ -86,10 +99,12 @@ for (i in 1:length(fitlist_nonull)) {
   aicc[[i]] <- fitlist_nonull[[i]][["aicc"]]
 }
 
+#visualize AICC
 aicc = as.numeric(aicc)
 fcerrors = as.data.frame(t(sapply(fitlist_nonull,'errorcalc',test)))
 
-#checkparameters of optimized model
+#checkparameters of optimized model, selected based on comparison with test set or AICC.
+#RMSE, MAE, AICC
 para_nonull[which.min(fcerrors$RMSE),]
 para_nonull[which.min(fcerrors$MAE),]
 para_nonull[which.min(aicc),]
@@ -106,6 +121,7 @@ plotarimaerror %>%
   geom_bar(aes(fill = Fits), stat = 'identity', position = 'dodge') + 
   labs(title = "Errors on test set") + facet_wrap(~variable, scale = "free")
 
+#Compare to test set.
 autoplot(window(amtrakts, start = c(2014,1))) +
   autolayer(forecast(plotarima[[1]],length(test)), series = 'Min RMSE', PI = FALSE) +
   autolayer(forecast(plotarima[[2]],length(test)), series = 'Min MAE', PI = FALSE) +
@@ -123,14 +139,17 @@ selectedmodels = list(fitlist_nonull[[which.min(fcerrors$RMSE)]],fitlist_nonull[
 fitets = ets(training)
 fitets = ets(training, model = "ZAA")
 #model chose AAA ets model. 
+#try ZMM, ZAM, ZMA models, AIC did not improve.
+
+ets(training, model = "ZMM")
+ets(training, model = "ZMA")
 
 selectedmodels[[length(selectedmodels)+1]] <- fitets
 
 #use tsCV to check our models. Start with ets.
 myforecast = function(y,h) {
-  forecast(ets(y),h = h)
+  forecast(ets(y, model = "ZAA"),h = h)
 }
-tsCVets = tsCV(amtrakts, myforecast, h = 12)
 
 RMSEcalc = function(a) {
   sqrt(mean(a^2, na.rm = TRUE))
@@ -140,62 +159,102 @@ MAEcalc = function(a) {
   mean(abs(a), na.rm = TRUE)
 }
 
+NAcalc = function(a) {
+  sum(is.na(a))
+}
+tsCVets = tsCV(uptrend, myforecast, h = 12)
+
 # compute RMSE for forecast window. seems like only checking h=1 is enough.
-apply(b, 2, RMSEcalc)
+RMSEets = apply(tsCVets, 2, RMSEcalc)
+MAEets = apply(tsCVets, 2, MAEcalc)
+NAets = apply(tsCVets, 2, NAcalc)
 
 #tsCV on arima(212,212)
 myforecast = function(y,h){
   forecast(arima(y, order = c(2,1,2), seasonal = c(2,1,2)),h = h)
 }
 
-tsCVarima212212 = tsCV(amtrakts, myforecast, h = 1)
+tsCVarima212212 = tsCV(uptrend, myforecast, h = 12)
+RMSEarima2 = apply(tsCVarima212212, 2, RMSEcalc)
+MAEarima2 = apply(tsCVarima212212, 2, MAEcalc)
+NAarima2 = apply(tsCVarima212212, 2, NAcalc)
 
 myforecast = function(y,h){
   forecast(arima(y, order = c(1,1,1), seasonal = c(0,1,1)),h = h)
 }
 
-tsCVarima111011 = tsCV(amtrakts, myforecast, h = 1)
-RMSE = list()
-RMSE[["ets"]]<- RMSEcalc(tsCVets[,"h=1"])
-RMSE[["arima212212"]]<- RMSEcalc(tsCVarima212212)
-RMSE[["arima111011"]]<- RMSEcalc(tsCVarima111011)
+tsCVarima111011 = tsCV(uptrend, myforecast, h = 12)
+RMSEarima1 = apply(tsCVarima111011, 2, RMSEcalc)
+MAEarima1 = apply(tsCVarima111011, 2, MAEcalc)
+NAarima1 = apply(tsCVarima111011, 2, NAcalc)
 
-MAE = list()
-MAE[["ets"]]<- MAEcalc(tsCVets[,"h=1"])
-MAE[["arima212212"]]<- MAEcalc(tsCVarima212212)
-MAE[["arima111011"]]<- MAEcalc(tsCVarima111011)
+RMSE = as.data.frame(cbind(RMSEets,RMSEarima2,RMSEarima1))
+colnames(RMSE) = c("etsAAA","arima212212","arima111011")
+RMSE = RMSE %>%
+  rownames_to_column("h") %>%
+  mutate(error = "RMSE")
 
-no.NAs = list()
-no.NAs[["ets"]]<- sum(is.na((tsCVets[,"h=1"])))
-no.NAs[["arima212212"]]<- sum(is.na((tsCVarima212212)))
-no.NAs[["arima111011"]]<- sum(is.na((tsCVarima111011)))
+MAE = as.data.frame(cbind(MAEets,MAEarima2,MAEarima1))
+colnames(MAE) = c("etsAAA","arima212212","arima111011")
+MAE = MAE %>%
+  rownames_to_column("h") %>%
+  mutate(error = "MAE")
 
-errors = as.data.frame(cbind(RMSE,MAE,no.NAs))
-colnames(errors) = c("RMSE","MAE","no. of NAs")
-errors = errors %>%
-  rownames_to_column("model") %>%
-  gather("errortype","value",-model)
+NAs = as.data.frame(cbind(NAets,NAarima2,NAarima1))
+colnames(NAs) = c("etsAAA","arima212212","arima111011")
+NAs = NAs %>%
+  rownames_to_column("h") %>%
+  mutate(error = "NAs")
+
+errors = rbind(RMSE,MAE,NAs) %>%
+  melt(id.vars = c("h","error"), variable.name = "model")
+
+errors$h %>%
+  str_extract("\\d{1,2}") %>%
+  as.integer() -> errors$h
 
 errors %>%
+  filter(error == "NAs") %>% filter(h == 1) %>%
   ggplot(aes(x = model)) +
-  geom_col(aes(y=value, fill=model)) +facet_wrap(~errortype) +
-  labs(title = "ts Cross Validation results")
+  geom_col(aes(y=value, fill=model)) + facet_wrap(~error) +
+  labs(title = "ts Cross Validation results") + ylab("Unstable models") +
+  scale_fill_manual(values = c("#22b8d6", "#4922d6","#228b75"))
+
+errors %>%
+  filter(error != "NAs") %>% filter(model != "arima212212") %>%
+  ggplot(aes(x = h, y=value, color=model)) +
+  geom_smooth(se = FALSE, size = 1.5) +
+  geom_point(size = 2) + 
+  facet_wrap(~error, nrow = 3) +
+  labs(title = "ts Cross Validation results") + 
+  scale_x_continuous(breaks = seq(1, 12, by = 1)) +
+  scale_color_manual(values = c("#22b8d6", "#228b75"))
 
 #retrain complete model to forecast 6 months forward
 
-fitarima_complete = arima(amtrakts, order = c(1,1,1), seasonal = c(0,1,1))
-fitets_complete = ets(amtrakts)
+fitarima_complete = arima(uptrend, order = c(1,1,1), seasonal = c(0,1,1))
+fitets_complete = ets(uptrend, model = "ZAA")
 
-autoplot(window(amtrakts, start = c(2014,1))) +
-  autolayer(forecast(fitarima_complete,9), series = 'Arima 111011', PI = FALSE, colour = "red") +
-  autolayer(forecast(fitets_complete,9), series = 'ETS "AAA"', PI = FALSE, colour = "green")
+autoplot(window(amtrakts, start = c(2016,1))) +
+  autolayer(forecast(fitarima_complete,12), series = 'Arima 111011', PI = FALSE, alpha = 0.5) +
+  autolayer(forecast(fitets_complete,12), series = 'ETS "AAA"', PI = FALSE, alpha = 0.5) +
+  scale_color_manual(values = c("red","green"))+
+  annotate("rect", xmin = 2018.25, xmax = 2018.75, ymin = 1700, ymax = 2400,
+           alpha = .2, fill = "blue") +
+  annotate("rect", xmin = 2018.75, xmax = 2019.25, ymin = 1700, ymax = 2400,
+           alpha = .1, fill = "yellow") +
+  annotate("text", x = c(2018.5,2019), y = c(1800,1800), label = c("Apr-Sep '18","Oct-Mar '19"), size = 6) + 
+  labs(title = "Amtrak ridership forecast")
 
 p1 = autoplot(window(amtrakts, start = c(2014,1))) +
-  autolayer(forecast(fitarima_complete,9), series = 'Arima 111011', PI = TRUE, colour = "red") + 
+  autolayer(forecast(fitarima_complete,12), series = 'Arima 111011', PI = TRUE, colour = "red") + 
   labs(title = "forecast with Arima111011")
 
 p2 = autoplot(window(amtrakts, start = c(2014,1))) +
-  autolayer(forecast(fitarima_complete,9), series = 'Arima 111011', PI = TRUE, colour = "green") + 
+  autolayer(forecast(fitarima_complete,12), series = 'ets_AAA', PI = TRUE, colour = "green") + 
   labs(title = "forecast with ets_AAA")
+
+forecastarima = forecast(fitarima_complete, 12)
+forecastets = forecast(fitets_complete,12)
 
 ggarrange(p1,p2,nrow = 2, ncol = 1)
