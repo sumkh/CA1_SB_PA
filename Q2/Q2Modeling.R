@@ -1,6 +1,7 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr,xgboost)
 
-setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+#setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
 #setwd("~/WorkDirectory")
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
@@ -48,7 +49,7 @@ glimpse(loans_dftrainDN)
 # Logistic Regression model
 
 loans_dfglm <- glm(formula = targetloanstatus ~ .,
-                  family=binomial,  data=loans_dftrainDN)
+                   family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm)
 vif(loans_dfglm)
 # vif >10  for intrate and grade. Remove grade from domain knowledge.
@@ -73,7 +74,7 @@ anova(loans_dfglm2, test="Chisq")
 
 loans_dfglm3 <- glm(formula = targetloanstatus ~ creditpolicy + loanamnt + term + intrate + 
                       inqlast6mths + revolutil + logannualinc + purpose_mod,
-                   family=binomial,  data=loans_dftrainDN)
+                    family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
 
@@ -85,7 +86,6 @@ pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response"
 confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
 confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 
-library(pROC)
 #roc syntax: (actual results, predicted probabilities)
 roc_glm_train = roc(as.numeric(loans_dftrainDN$targetloanstatus),pdataglm_train)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
@@ -93,6 +93,89 @@ plot(roc_glm_train, print.auc = TRUE)
 plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
 legend(0.1,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
 # AUC = 0.700
+
+#Random Forest
+
+st = Sys.time() 
+rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
+                      ntree = 400,
+                      mtry = 2,
+                      importance = TRUE,
+                      cutoff=c(0.5,1-0.5),
+                      na.action=na.exclude)
+Sys.time()-st #11secs
+plot(rf_dn)
+st=Sys.time()
+t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
+            stepFactor = 0.5,
+            plot = TRUE,
+            ntreeTry = 400,
+            trace = TRUE,
+            improve = 0.05)
+# mtry 2 has optimum 
+Sys.time()-st
+
+# Perform prediction on trainset and look at confusion matrix.
+pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainDN, type = "response")
+pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
+
+#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
+
+confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainDN$targetloanstatus)
+confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
+
+
+pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainDN, type = "prob")
+pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
+
+#roc syntax: (actual results, predicted probabilities)
+roc_rf_train = roc(loans_dftrainDN$targetloanstatus,pdatarf_train_roc[,1])
+roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,1])
+plot(roc_rf_train, print.auc = TRUE)
+plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
+legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
+# AUC = 0.696
+
+# boosting
+train_x = data.matrix(loans_dftrainDN[,-7])
+train_y = loans_dftrainDN[,7]
+train_y = ifelse(train_y=="1","1","0")
+test_x = data.matrix(loans_dftest[,-7])
+test_y = loans_dftest[,7]
+test_y = ifelse(test_y=="1","1","0")
+
+xgb_train = xgb.DMatrix(data=train_x, label=train_y)
+xgb_test = xgb.DMatrix(data=test_x, label=test_y)
+
+params <- list(booster = "gbtree", objective = "binary:logistic", 
+               eta=0.3, gamma=0, max_depth=6, min_child_weight=1, 
+               subsample=1, colsample_bytree=1)
+#try xgboost cross validation
+xgbcv = xgb.cv(params = params, data = xgb_train, nrounds = 100, nfold = 5, 
+               showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
+
+which.min((xgbcv[["evaluation_log"]][["test_error_mean"]]))
+#8th iteration gives lowest test_error_mean
+
+xgbc <- xgb.train(params=params,data = xgb_train, nfold = 5, nrounds = 8, verbose = FALSE,
+                  eval_metric = 'auc')
+
+x1_dn = predict(xgbc, xgb_train,type="prob")
+x2_dn = predict(xgbc, xgb_test,type="prob")
+
+x1_dn = as.factor(ifelse(x1_dn>0.5,"1","0"))
+x2_dn = as.factor(ifelse(x2_dn>0.5,"1","0"))
+
+confusionMatrix(x1_dn,loans_dftrainDN$targetloanstatus)
+confusionMatrix(x2_dn,loans_dftest$targetloanstatus)
+
+roc(loans_dftrainDN$targetloanstatus,predict(xgbc, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
+plot.roc(loans_dftest$targetloanstatus,predict(xgbc, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE,col="blue")
+#AUC: 0.69
+mat = xgb.importance(model=xgbc)
+xgb.plot.importance (importance_matrix = mat[1:20]) 
+
+library(pROC)
 
 # Build a Random Forest model. This takes a while.
 control <- trainControl(method="repeatedcv", number=10, repeats=3)
@@ -106,7 +189,7 @@ library(dplyr)
 
 loan_dftrainDNada = loan_dftrainDN  %>% 
   mutate(targetloanstatus = factor(targetloanstatus, 
-                        labels = make.names(levels(targetloanstatus))))
+                                   labels = make.names(levels(targetloanstatus))))
 
 grid <- expand.grid(mfinal = (1:3)*3, maxdepth = c(1, 3),
                     coeflearn = c("Breiman", "Freund", "Zhu"))
@@ -119,11 +202,11 @@ cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
                        seeds = seeds)
 
 model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada, 
-                            method = "AdaBoost.M1",
-                            tuneGrid = grid, 
-                            trControl = cctrl1,
-                            metric = "ROC", 
-                            preProc = c("center", "scale"))
+                method = "AdaBoost.M1",
+                tuneGrid = grid, 
+                trControl = cctrl1,
+                metric = "ROC", 
+                preProc = c("center", "scale"))
 
 # Generate textual output of the 'Random Forest' model.
 
