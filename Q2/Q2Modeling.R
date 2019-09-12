@@ -81,6 +81,7 @@ vif(loans_dfglm3)
 pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
+
 confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
 confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 
