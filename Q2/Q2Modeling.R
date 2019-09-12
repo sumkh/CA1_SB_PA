@@ -237,3 +237,28 @@ matrix_table3 = table(results)
 
 accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
 round(accuracyNN, 3)
+
+# Threshold determination
+##########
+pnl = function(predict, reference, fp = 500, fn = 1000) {
+  thres = seq(0,1,0.01)
+  mydf = data.frame(Threshold = numeric(),
+                    Profits = numeric(),
+                    L_Profits = numeric(),
+                    Losses = numeric(),
+                    Combined = numeric())
+  for (i in thres) {
+    cm = confusionMatrix(data = as.factor(as.numeric(pdataglm>i)), reference = loan_dftrainDN$targetloanstatus)
+    profits = cm[["table"]][1] * fp
+    lost_prof = cm[["table"]][2] * fp
+    losses = cm[["table"]][3] * fn
+    total = profits - lost_prof - losses
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total)
+  }
+  return(mydf)
+}
+# accuracy = 0.851
+a = pnl(pdataglm,loan_dftrainDN$targetloanstatus, 3000, 10000)
+a %>% ggplot(aes(x = Threshold, y = Combined)) +
+  geom_line()
+#######
