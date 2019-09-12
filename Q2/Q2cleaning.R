@@ -1,6 +1,6 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr, dlookr, inspectdf)
 
-setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
+setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 #setwd("~/WorkDirectory")
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
@@ -42,12 +42,12 @@ p1 = loans %>%
 # box-plot for continuous variables
 p2 = loans %>%
   ggplot(aes(x = targetloanstatus)) +
-  geom_boxplot(aes(y=potl_profit), outlier.shape = NA) + facet_grid(~grade) + 
-  scale_y_continuous(limits = c(0,10000))
+  geom_boxplot(aes(y=revolbal), outlier.shape = NA) + facet_grid(~grade) + 
+  scale_y_continuous(limits = c(0,20000))
 
 #geom_area plot for continuous variables
 p3 = loans %>%
-  ggplot(aes(x= revolutil)) +
+  ggplot(aes(x= revolbal)) +
   geom_area(aes(fill = targetloanstatus), color = "white", 
             stat ="density") +
   scale_fill_manual(values = c("#00AFBB", "#E7B800")) + 
@@ -143,8 +143,7 @@ table(loans$homeowner, loans$homeownership)
 
 # apply log to annualinc and revolbal
 loans = loans %>%
-  mutate(logannualinc = log(annualinc),
-         logrevolbal = log(revolbal))
+  mutate(logannualinc = log(annualinc))
 
 # recreate ratio for openacc/totalacc
 loans = loans %>%
@@ -194,7 +193,7 @@ loans %>%
   mutate(perc = sum/sum(sum))
 
 # Selecting Features for Modelling
-loans_df = select(loans, -c("id","homeownership","annualinc", "revolbal","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
+loans_df = select(loans, -c("id","homeownership","annualinc","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
 glimpse(loans_df)
 
 loans_test = select(loans, c("profit","loss","targetloanstatus","potl_profit"))
