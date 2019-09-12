@@ -13,18 +13,56 @@ loans = loans_all[complete.cases(loans_all),]
 glimpse(loans)
 summary(loans)
 
-# Inspecting the Variables
-# install.packages("inspectdf")
-library("inspectdf")
-inspect_cat(loans) %>% show_plot()
-inspect_num(loans_all) %>% show_plot()
-
+# assume that targetloanstatus defines defaults -> defaulted loans: targetloanstatus == 1
 # code dependent variable target loan status as factor and plot graph
 loans$targetloanstatus <- as.factor(loans$targetloanstatus)
 
-# check for the 0 and 1 using contrasts
-contrasts(loans$targetloanstatus)
+# EDA
+###################
 
+# Inspecting the Variables
+# install.packages("inspectdf")
+# library("inspectdf")
+# # takes a long time to run, gives overview histogram of all variables
+# inspect_cat(loans) %>% show_plot()
+# inspect_num(loans_all) %>% show_plot()
+
+# Variables related to business.
+
+# Some plots to visualize data. (Ordinal/continuous against target loan status)
+# this is to compute percentage default against ordinal variables.
+p1 = loans %>%
+  group_by(grade) %>%
+  count(targetloanstatus) %>%
+  mutate(percentage = n/sum(n)) %>%
+  ggplot(aes(x = grade, y = percentage)) +
+  geom_col(aes(fill = targetloanstatus)) + 
+  labs(title = "percentage of defaulters") + ylab("default %")
+
+# box-plot for continuous variables
+p2 = loans %>%
+  ggplot(aes(x = targetloanstatus)) +
+  geom_boxplot(aes(y=potl_profit), outlier.shape = NA) + facet_grid(~grade) + 
+  scale_y_continuous(limits = c(0,10000))
+
+#geom_area plot for continuous variables
+p3 = loans %>%
+  ggplot(aes(x= revolutil)) +
+  geom_area(aes(fill = targetloanstatus), color = "white", 
+            stat ="density") +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800")) + 
+  labs(title = "Density distibution of revolutil")
+
+#ggdensit plot to check
+p4 = loans %>%
+  ggdensity(x = "revolutil",
+            add = "median",
+            color = "targetloanstatus", fill = "targetloanstatus",
+            palette = c("blue","red"))
+
+ggarrange(p1,p2,p3,p4, nrow = 2, ncol = 2)
+
+# Now lets look at the data.
 loans %>%
   group_by(targetloanstatus)%>%
   summarise(per = n()/nrow(loans))%>%
@@ -33,7 +71,7 @@ loans %>%
   geom_text(aes(label = round(per, 2)), vjust = 2) + labs(fill = "Loan Status", title = "Summary of Current Loan Status", x = "Loan Status", y = "Percentage")
 
 # 15% of borrowers defaulted on loan
-# Plot loan status against term
+## visualise different dependent variables.
 
 loans %>%
   group_by(term, targetloanstatus) %>%
@@ -42,7 +80,7 @@ loans %>%
   geom_bar(position = 'fill', stat = 'identity') +
   labs(title="Current Loan Status by Term", x = "Term", y = "Percentage", fill = "Loan Status") 
 
-# higher chance of default for long term (60 months) loan
+# higher chance of default for long term (60 months) loan -> potentially useful variable.
 # plot of loan amount against grade and loan status
 
 loans %>%
@@ -57,8 +95,7 @@ loans %>%
 # Outliers are common for grades A - D
 # the loan amount spread (IQR) is higher for lower grade loans
 
-# Plot loan status against grade
-
+# Plot loan status against grade -> LC has a good understanding of business risk.
 loans %>%
   group_by(grade, targetloanstatus) %>%
   summarise(count_level = n(), percentage = n()/nrow(loans)) %>%
@@ -66,57 +103,18 @@ loans %>%
   geom_bar(position = 'fill', stat = 'identity') +
   labs(title="Current Loan Status by Grade", x = "Grade", y = "Percentage", fill = "Loan Status") 
 
-
-#-----------------------------------------------------------------------------#
-#assume that targetloanstatus defines defaults -> defaulted loans: targetloanstatus == 1
-
+# some non-visual data tables
 loans %>%
   group_by(targetloanstatus) %>%
   summarise(ratio = n()/nrow(loans), count = n())
-
-#Some data visualization
 
 loans %>%
   group_by(targetloanstatus) %>%
   count(creditpolicy) %>%
   mutate(perc = n/sum(n))
-
-#this is to compute percentage default against ordinal variables.
-p1 = loans %>%
-  group_by(grade) %>%
-  count(targetloanstatus) %>%
-  mutate(percentage = n/sum(n)) %>%
-  ggplot(aes(x = grade, y = percentage)) +
-  geom_col(aes(fill = targetloanstatus)) + 
-  labs(title = "percentage of defaulters") + ylab("default %")
-
-p2 = loans %>%
-  ggplot(aes(x = targetloanstatus)) +
-  geom_boxplot(aes(y=intrate)) + facet_grid(~grade)
-
-p3 = loans %>%
-  ggplot(aes(x = targetloanstatus)) +
-  geom_boxplot(aes(y=annualinc), outlier.shape = NA) + facet_grid(~grade) + 
-  scale_y_continuous(limits = c(0,150000))
-
-#ggdensity plot for continuous variables
-p4 = loans %>%
-  ggdensity(x = "revolutil",
-            add = "median",
-            color = "targetloanstatus", fill = "targetloanstatus",
-            palette = c("blue","red"))
-
-#geom_area also can be used.
-p5 = loans %>%
-  ggplot(aes(x= revolutil)) +
-  geom_area(aes(fill = targetloanstatus), color = "white", 
-            stat ="density") +
-  scale_fill_manual(values = c("#00AFBB", "#E7B800")) + 
-  labs(title = "Density distibution of revolutil")
-
-ggarrange(p1,p2,p3, p4, nrow = 2, ncol = 2)
-
-#-----------------------------------------------------------------------------#
+##############
+# Data Cleaning
+##############
 
 # clean emplength and term lines
 table(loans$term, useNA = "always")
@@ -125,57 +123,38 @@ loans$term %>%
 
 table(loans$emplength, useNA = "always")
 loans$emplength %>%
-  str_replace("< 1", "0") %>%
+  str_replace("< 1", "1") %>%
+  str_replace("n/a", "0") %>%
   str_extract("\\d{1,2}") -> loans$emplength
 loans[,c("term","emplength")] = 
   lapply(loans[,c("term","emplength")], as.integer)
-loans = na.omit(loans)
+table(loans$emplength, useNA = "always")
 
 # Create 2 new variables for emp10years and delinq2ears
 loans = loans %>%
-  mutate(emp10years = as.factor(case_when(emplength > 9 ~ "Y",
-                                          emplength <= 9 ~ "N")),
-         delin2years = factor(case_when(delinq2yrs > 0 ~ "Y",
+  mutate(delin2years = factor(case_when(delinq2yrs > 0 ~ "Y",
                                         delinq2yrs == 0 ~ "N")),
          homeowner = factor(ifelse(homeownership == "MORTGAGE"|homeownership == "OWN",
                                    "Y", "N")))
 
-table(loans$emp10years, loans$emplength)
 table(loans$delin2years, loans$delinq2yrs)
 table(loans$homeowner, loans$homeownership)
 
+# apply log to annualinc and revolbal
+loans = loans %>%
+  mutate(logannualinc = log(annualinc),
+         logrevolbal = log(revolbal))
 
-# Binning annualinc
-# install.packages("dlookr")
-# library(dlookr)
-loans$annualinc_bin = dlookr::binning(loans$annualinc, nbins = 5, type = "quantile", 
-                                      ordered = T, labels = paste0("Gp",seq(1:5)))
-table(loans$annualinc_bin, useNA = "always")
-class(loans$annualinc_bin)
-str(loans$annualinc_bin)
-
-loans %>% 
-  group_by(annualinc_bin) %>%
-  summarise(min(annualinc), max(annualinc))
-
-# Binning the revolbal
-loans$revolbal_bin = dlookr::binning(loans$revolbal, nbins = 5, type = "quantile", 
-                                     ordered = T, labels = paste0("Gp",seq(1:5)))
-
-table(loans$revolbal_bin, useNA = "always")
-class(loans$revolbal_bin)
-str(loans$revolbal_bin)
-
-loans %>% 
-  group_by(revolbal_bin) %>%
-  summarise(min(revolbal), max(revolbal))
+# recreate ratio for openacc/totalacc
+loans = loans %>%
+  mutate(ratioacc = openacc/totalacc)
 
 # Recoding verification status
 table(loans$verificationstatus, useNA = "always")
 loans$verified = factor(ifelse(loans$verificationstatus == "Not Verified", "N","Y"))
 table(loans$verified, loans$verificationstatus)
 
-# Recoding purpose into 5 main categories
+# Recoding purpose into 7 main categories
 # create new variable purpose_mod
 
 loans = loans%>%
@@ -199,19 +178,39 @@ loans %>%
 loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose_mod")] = 
   lapply(loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")], as.factor)
 
+#Mutate some business variables for model evaluation in the end.
+loans = loans %>%
+  mutate(potl_profit = intrate*loanamnt,
+         loss = case_when(targetloanstatus == 0 ~ 0,
+                          targetloanstatus == 1 ~ as.double(loanamnt)),
+         profit = case_when(loss == 0 ~ potl_profit,
+                            loss != 0 ~ 0))
+
+loans %>%
+  group_by(grade, targetloanstatus) %>%
+  summarize(sum = sum(potl_profit)) %>%
+  ungroup() %>%
+  mutate(perc = sum/sum(sum))
+
 # Selecting Features for Modelling
-loans_df = select(loans, -c("id","homeownership","annualinc", "revolbal","verificationstatus","delinq2yrs", "purpose"))
+loans_df = select(loans, -c("id","homeownership","annualinc", "revolbal","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
 glimpse(loans_df)
+
+loans_test = select(loans, c("profit","loss","targetloanstatus","potl_profit"))
+glimpse(loans_test)
 
 # Visualisation of Correlation of Numerical Variables
 corrplot::corrplot(cor(loans_df[, sapply(loans_df, is.numeric)],
                        use="complete.obs"), method = "number", type='lower')
 
+loans_df = select(loans_df, -c("installment"))
 
+#visualise the loans_df data set for modelling
 inspect_cat(loans_df) %>% show_plot()
 inspect_num(loans_df) %>% show_plot()
 
-write.csv(loans_df, "cleanedloans.csv", row.names = F)
+write.csv(loans_df, "loansformodelling.csv", row.names = F)
+write.csv(loans_test, "loansfortest.csv", row.names = F)
 
 # Generating Reports with dlookr packages
 #loans_df %>% diagnose_report(output_format = "html", output_file = "Diagn.html", output_dir = ".")
