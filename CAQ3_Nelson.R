@@ -148,7 +148,7 @@ selectedmodels[[length(selectedmodels)+1]] <- fitets
 
 #use tsCV to check our models. Start with ets.
 myforecast = function(y,h) {
-  forecast(ets(y, "ZAA"),h = h)
+  forecast(ets(y, model = "ZAA"),h = h)
 }
 
 RMSEcalc = function(a) {
@@ -164,8 +164,10 @@ NAcalc = function(a) {
 }
 tsCVets = tsCV(uptrend, myforecast, h = 12)
 
+
 # compute RMSE/MAE/NA for forecast window. We also remove the first 14 figures as arima cannot build a model without 1 year of seasonality.
 tsCVets = window(tsCVets, start = c(2011,3))
+
 RMSEets = apply(tsCVets, 2, RMSEcalc)
 MAEets = apply(tsCVets, 2, MAEcalc)
 NAets = apply(tsCVets, 2, NAcalc)
@@ -177,6 +179,7 @@ myforecast = function(y,h){
 
 tsCVarima212212 = tsCV(uptrend, myforecast, h = 12)
 tsCVarima212212 = window(tsCVarima212212, start = c(2011,3))
+
 RMSEarima2 = apply(tsCVarima212212, 2, RMSEcalc)
 MAEarima2 = apply(tsCVarima212212, 2, MAEcalc)
 NAarima2 = apply(tsCVarima212212, 2, NAcalc)
@@ -187,6 +190,7 @@ myforecast = function(y,h){
 
 tsCVarima111011 = tsCV(uptrend, myforecast, h = 12)
 tsCVarima111011 = window(tsCVarima111011, start = c(2011,3))
+
 RMSEarima1 = apply(tsCVarima111011, 2, RMSEcalc)
 MAEarima1 = apply(tsCVarima111011, 2, MAEcalc)
 NAarima1 = apply(tsCVarima111011, 2, NAcalc)
@@ -236,7 +240,8 @@ errors %>%
 #retrain complete model to forecast 6 months forward
 
 fitarima_complete = arima(uptrend, order = c(1,1,1), seasonal = c(0,1,1))
-fitets_complete = ets(uptrend)
+fitets_complete = ets(uptrend, model = "ZAA")
+
 
 autoplot(window(amtrakts, start = c(2016,1))) +
   autolayer(forecast(fitarima_complete,12), series = 'Arima 111011', PI = FALSE, alpha = 0.5) +

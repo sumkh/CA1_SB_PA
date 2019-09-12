@@ -72,7 +72,6 @@ loans %>%
 
 # 15% of borrowers defaulted on loan
 ## visualise different dependent variables.
-# Plot loan status against term
 
 loans %>%
   group_by(term, targetloanstatus) %>%

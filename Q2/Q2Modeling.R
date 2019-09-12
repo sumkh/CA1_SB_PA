@@ -65,6 +65,7 @@ vif(loan_dfglm)
 loan_dfglm2 = step(loan_dfglm, trace = F)
 summary(loan_dfglm2)
 
+
 vif(loan_dfglm2)
 
 # vif >10  for intrate indicating high multicollinearity
@@ -80,7 +81,8 @@ anova(loan_dfglm2, test="Chisq")
 # verify on test set
 pdataglm <- predict(loan_dfglm2, newdata = loan_dftest, type = "response")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
-confusionMatrix(data = as.factor(as.numeric(pdataglm>0.7)), reference = loan_dftest$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglm>0.5)), reference = loan_dftest$targetloanstatus)
+
 
 library(pROC)
 #roc syntax: (actual results, predicted probabilities)
