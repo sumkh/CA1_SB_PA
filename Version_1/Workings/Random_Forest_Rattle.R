@@ -1,0 +1,528 @@
+#=======================================================================
+
+# Rattle is Copyright (c) 2006-2018 Togaware Pty Ltd.
+# It is free (as in libre) open source software.
+# It is licensed under the GNU General Public License,
+# Version 2. Rattle comes with ABSOLUTELY NO WARRANTY.
+# Rattle was written by Graham Williams with contributions
+# from others as acknowledged in 'library(help=rattle)'.
+# Visit https://rattle.togaware.com/ for details.
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 18:59:03 x86_64-apple-darwin15.6.0 
+
+# Rattle version 5.2.0 user 'briansum'
+
+# This log captures interactions with Rattle as an R script. 
+
+# For repeatability, export this activity log to a 
+# file, like 'model.R' using the Export button or 
+# through the Tools menu. Th script can then serve as a 
+# starting point for developing your own scripts. 
+# After xporting to a file called 'model.R', for exmample, 
+# you can type into a new R Console the command 
+# "source('model.R')" and so repeat all actions. Generally, 
+# you will want to edit the file to suit your own needs. 
+# You can also edit this log in place to record additional 
+# information before exporting the script. 
+ 
+# Note that saving/loading projects retains this log.
+
+# We begin most scripts by loading the required packages.
+# Here are some initial packages to load and others will be
+# identified as we proceed through the script. When writing
+# our own scripts we often collect together the library
+# commands at the beginning of the script here.
+
+library(rattle)   # Access the weather dataset and utilities.
+library(magrittr) # Utilise %>% and %<>% pipeline operators.
+
+# This log generally records the process of building a model. 
+# However, with very little effort the log can also be used 
+# to score a new dataset. The logical variable 'building' 
+# is used to toggle between generating transformations, 
+# when building a model and using the transformations, 
+# when scoring a dataset.
+
+building <- TRUE
+scoring  <- ! building
+
+# A pre-defined value is used to reset the random seed 
+# so that results are repeatable.
+
+crv$seed <- 123 
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 18:59:35 x86_64-apple-darwin15.6.0 
+
+# Load a dataset from file.
+
+fname         <- "loans_df.csv" 
+crs$dataset <- read.csv(fname,
+			na.strings=c(".", "NA", "", "?"),
+			strip.white=TRUE, encoding="UTF-8")
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:00:01 x86_64-apple-darwin15.6.0 
+
+# Action the user selections from the Data tab. 
+
+# Build the train/validate/test datasets.
+
+# nobs=41336 train=28935 validate=0 test=12401
+
+set.seed(123)
+
+crs$nobs <- nrow(crs$dataset)
+
+crs$train <- sample(crs$nobs, 0.7*crs$nobs)
+crs$validate <- NULL
+
+crs$nobs %>%
+  seq_len() %>%
+  setdiff(crs$train) %>%
+  setdiff(crs$validate) ->
+crs$test
+
+# The following variable selections have been noted.
+
+crs$input     <- c("creditpolicy", "loanamnt", "term", "intrate",
+                   "installment", "grade", "emplength", "dti",
+                   "inqlast6mths", "openacc", "revolutil",
+                   "totalacc", "emp10years", "delin2years",
+                   "homeowner", "annualinc_bin", "revolbal_bin",
+                   "verified", "purpose_mod")
+
+crs$numeric   <- c("loanamnt", "intrate", "installment",
+                   "emplength", "dti", "inqlast6mths", "openacc",
+                   "revolutil", "totalacc")
+
+crs$categoric <- c("creditpolicy", "term", "grade", "emp10years",
+                   "delin2years", "homeowner", "annualinc_bin",
+                   "revolbal_bin", "verified", "purpose_mod")
+
+crs$target    <- "targetloanstatus"
+crs$risk      <- NULL
+crs$ident     <- NULL
+crs$ignore    <- NULL
+crs$weights   <- NULL
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:00:37 x86_64-apple-darwin15.6.0 
+
+# Build a Random Forest model using the traditional approach.
+
+set.seed(crv$seed)
+
+crs$rf <- randomForest::randomForest(targetloanstatus ~ .,
+  data=crs$dataset[crs$train, c(crs$input, crs$target)], 
+  ntree=500,
+  mtry=4,
+  importance=TRUE,
+  na.action=randomForest::na.roughfix,
+  replace=FALSE)
+
+# Generate textual output of the 'Random Forest' model.
+
+crs$rf
+
+# The `pROC' package implements various AUC functions.
+
+# Calculate the Area Under the Curve (AUC).
+
+pROC::roc(crs$rf$y, as.numeric(crs$rf$predicted))
+
+# Calculate the AUC Confidence Interval.
+
+pROC::ci.auc(crs$rf$y, as.numeric(crs$rf$predicted))FALSE
+
+# List the importance of the variables.
+
+rn <- round(randomForest::importance(crs$rf), 2)
+rn[order(rn[,3], decreasing=TRUE),]
+
+# Time taken: 2.23 mins
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:03:01 x86_64-apple-darwin15.6.0 
+
+# Plot the relative importance of the variables.
+
+p <- ggVarImp(crs$rf,
+              title="Variable Importance Random Forest loans_df.csv")
+p
+
+# Plot the OOB ROC curve.
+
+library(verification)
+aucc <- verification::roc.area(as.integer(as.factor(crs$dataset[crs$train, crs$target]))-1,
+                 crs$rf$votes[,2])$A
+verification::roc.plot(as.integer(as.factor(crs$dataset[crs$train, crs$target]))-1,
+         crs$rf$votes[,2], main="")
+legend("bottomright", bty="n",
+       sprintf("Area Under the Curve (AUC) = %1.3f", aucc))
+title(main="OOB ROC Curve Random Forest loans_df.csv",
+    sub=paste("Rattle", format(Sys.time(), "%Y-%b-%d %H:%M:%S"), Sys.info()["user"]))
+
+# Plot the error rate against the number of trees.
+
+plot(crs$rf, main="")
+legend("topright", c("OOB", "Default", "NoDefault"), text.col=1:6, lty=1:3, col=1:3)
+title(main="Error Rates Random Forest loans_df.csv",
+    sub=paste("Rattle", format(Sys.time(), "%Y-%b-%d %H:%M:%S"), Sys.info()["user"]))
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:04:05 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# Generate an Error Matrix for the Random Forest model.
+
+# Obtain the response from the Random Forest model.
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]))
+
+# Generate the confusion matrix showing counts.
+
+rattle::errorMatrix(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus, crs$pr, count=TRUE)
+
+# Generate the confusion matrix showing proportions.
+
+(per <- rattle::errorMatrix(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus, crs$pr))
+
+# Calculate the overall error percentage.
+
+cat(100-sum(diag(per), na.rm=TRUE))
+
+# Calculate the averaged class error percentage.
+
+cat(mean(per[,"Error"], na.rm=TRUE))
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:04:15 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# Risk Chart: requires the ggplot2 package.
+
+library(ggplot2)
+
+# Generate a risk chart.
+
+# Rattle provides evaluateRisk() and riskchart().
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+crs$eval <- evaluateRisk(crs$pr, na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+print(riskchart(crs$pr, 
+    na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus, 
+    title="Performance Chart Random Forest loans_df.csv [test] ", show.lift=TRUE, show.precision=TRUE, legend.horiz=FALSE))
+
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:06:16 x86_64-apple-darwin15.6.0 
+
+# Save the project data (variable crs) to file.
+
+save(crs, file="Random_Forest_Rattle.Rdata", compress=TRUE)
+load("Random_Forest_Rattle.Rdata")
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:06:29 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# Cost Curve: requires the ROCR package.
+
+library(ROCR)
+
+# Generate a Cost Curve for the Random Forest model on loans_df.csv [test].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+plot(0, 0, xlim=c(0, 1), ylim=c(0, 1), xlab="Probability cost function", ylab="Normalized expected cost")
+lines(c(0,1),c(0,1))
+lines(c(0,1),c(1,0))
+
+# Remove observations with missing target.
+
+no.miss   <- na.omit(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+miss.list <- attr(no.miss, "na.action")
+attributes(no.miss) <- NULL
+
+if (length(miss.list))
+{
+  pred <- prediction(crs$pr[-miss.list], no.miss)
+} else
+{
+  pred <- prediction(crs$pr, no.miss)
+}
+perf1 <- performance(pred, "fpr", "fnr")
+for (i in seq_along(perf1@x.values))
+{
+	for (j in seq_along(perf1@x.values[[i]]))
+	{
+		lines(c(0,1),c(perf1@y.values[[i]][j],
+				perf1@x.values[[i]][j]),
+				col=terrain.colors(10)[i],lty=3)
+	}
+}
+perf<-performance(pred, "ecost")
+
+# Bug in ROCR 1.0-3 does not obey the add command.
+# Calling the function directly does work.
+
+.plot.performance(perf, lwd=1.5, xlim=c(0,1), ylim=c(0,1), add=T)
+op <- par(xpd=TRUE)
+text(0, 1.07, "FPR")
+text(1, 1.07, "FNR")
+par(op)
+text(0.12, 1, "Predict +ve")
+text(0.88, 1, "Predict -ve")
+title(main="Cost Curve Random Forest loans_df.csv [test]",
+    sub=paste("Rattle", format(Sys.time(), "%Y-%b-%d %H:%M:%S"), Sys.info()["user"]))
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:08:02 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# Lift Chart: requires the ROCR package.
+
+library(ROCR)
+
+# Obtain predictions for the rf model on loans_df.csv [test].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+# Remove observations with missing target.
+
+no.miss   <- na.omit(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+miss.list <- attr(no.miss, "na.action")
+attributes(no.miss) <- NULL
+
+if (length(miss.list))
+{
+  pred <- prediction(crs$pr[-miss.list], no.miss)
+} else
+{
+  pred <- prediction(crs$pr, no.miss)
+}
+
+# Convert rate of positive predictions to percentage.
+
+per <- performance(pred, "lift", "rpp")
+per@x.values[[1]] <- per@x.values[[1]]*100
+
+# Plot the lift chart.
+ROCR::plot(per, col="#CC0000FF", lty=1, xlab="Caseload (%)", add=FALSE)
+
+# Generate a Lift Chart for the rf model on loans_df.csv [train].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+# Also convert rate of positive predictions to percentage
+
+per <- performance(prediction(crs$pr, na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus),"lift", "rpp")
+per@x.values[[1]] <- per@x.values[[1]]*100
+
+# Now plot the lift.
+
+# Bug in ROCR 1.0-3 plot does not obey the add command.# Calling the function directly (.plot.performance) does work.
+
+.plot.performance(per, col="#00CCCCFF", lty=2, add=TRUE)
+
+# Add a legend to the plot.
+
+legend("topright", c("Test","Train"), col=rainbow(2, 1, .8), lty=1:2, title="Random Forest", inset=c(0.05, 0.05))
+
+# Add decorations to the plot.
+
+title(main="Lift Chart  loans_df.csv ",
+    sub=paste("Rattle", format(Sys.time(), "%Y-%b-%d %H:%M:%S"), Sys.info()["user"]))
+grid()
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:08:20 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# ROC Curve: requires the ROCR package.
+
+library(ROCR)
+
+# ROC Curve: requires the ggplot2 package.
+
+library(ggplot2, quietly=TRUE)
+
+# Generate an ROC Curve for the rf model on loans_df.csv [test].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+# Remove observations with missing target.
+
+no.miss   <- na.omit(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+miss.list <- attr(no.miss, "na.action")
+attributes(no.miss) <- NULL
+
+if (length(miss.list))
+{
+  pred <- prediction(crs$pr[-miss.list], no.miss)
+} else
+{
+  pred <- prediction(crs$pr, no.miss)
+}
+
+pe <- performance(pred, "tpr", "fpr")
+au <- performance(pred, "auc")@y.values[[1]]
+pd <- data.frame(fpr=unlist(pe@x.values), tpr=unlist(pe@y.values))
+p <- ggplot(pd, aes(x=fpr, y=tpr))
+p <- p + geom_line(colour="red")
+p <- p + xlab("False Positive Rate") + ylab("True Positive Rate")
+p <- p + ggtitle("ROC Curve Random Forest loans_df.csv [test] targetloanstatus")
+p <- p + theme(plot.title=element_text(size=10))
+p <- p + geom_line(data=data.frame(), aes(x=c(0,1), y=c(0,1)), colour="grey")
+p <- p + annotate("text", x=0.50, y=0.00, hjust=0, vjust=0, size=5,
+                   label=paste("AUC =", round(au, 2)))
+print(p)
+
+# Calculate the area under the curve for the plot.
+
+
+# Remove observations with missing target.
+
+no.miss   <- na.omit(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+miss.list <- attr(no.miss, "na.action")
+attributes(no.miss) <- NULL
+
+if (length(miss.list))
+{
+  pred <- prediction(crs$pr[-miss.list], no.miss)
+} else
+{
+  pred <- prediction(crs$pr, no.miss)
+}
+performance(pred, "auc")
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:08:36 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# Precision/Recall Plot: requires the ROCR package
+
+library(ROCR)
+
+# Generate a Precision/Recall Plot for the rf model on loans_df.csv [test].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+# Remove observations with missing target.
+
+no.miss   <- na.omit(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+miss.list <- attr(no.miss, "na.action")
+attributes(no.miss) <- NULL
+
+if (length(miss.list))
+{
+  pred <- prediction(crs$pr[-miss.list], no.miss)
+} else
+{
+  pred <- prediction(crs$pr, no.miss)
+}
+ROCR::plot(performance(pred, "prec", "rec"), col="#CC0000FF", lty=1, add=FALSE)
+
+
+# Generate a Precision/Recall Plot for the rf model on loans_df.csv [train].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+# In ROCR (1.0-3) plot does not obey the add command.
+# Calling the function directly (.plot.performance) does work.
+
+.plot.performance(performance(prediction(crs$pr, na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus),"prec", "rec"), col="#00CCCCFF", lty=2, add=TRUE)
+
+
+# Add a legend to the plot.
+
+legend("bottomleft", c("Test","Train"), col=rainbow(2, 1, .8), lty=1:2, title="rf", inset=c(0.05, 0.05))
+
+# Add decorations to the plot.
+
+title(main="Precision/Recall Plot  loans_df.csv ",
+    sub=paste("Rattle", format(Sys.time(), "%Y-%b-%d %H:%M:%S"), Sys.info()["user"]))
+grid()
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:08:51 x86_64-apple-darwin15.6.0 
+
+# Evaluate model performance on the testing dataset. 
+
+# Sensitivity/Specificity Plot: requires the ROCR package
+
+library(ROCR)
+
+# Generate Sensitivity/Specificity Plot for rf model on loans_df.csv [test].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+# Remove observations with missing target.
+
+no.miss   <- na.omit(na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus)
+miss.list <- attr(no.miss, "na.action")
+attributes(no.miss) <- NULL
+
+if (length(miss.list))
+{
+  pred <- prediction(crs$pr[-miss.list], no.miss)
+} else
+{
+  pred <- prediction(crs$pr, no.miss)
+}
+ROCR::plot(performance(pred, "sens", "spec"), col="#CC0000FF", lty=1, add=FALSE)
+
+
+# Generate a Lift Chart for the rf model on loans_df.csv [train].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input, crs$target)]),
+    type    = "prob")[,2]
+
+#In ROCR (1.0-3) plot does not obey the add command.
+# Calling the function directly (.plot.performance) does work.
+
+.plot.performance(performance(prediction(crs$pr, na.omit(crs$dataset[crs$test, c(crs$input, crs$target)])$targetloanstatus),"sens", "spec"), col="#00CCCCFF", lty=2, add=TRUE)
+
+
+# Add a legend to the plot.
+
+legend("bottomleft", c("Test","Train"), col=rainbow(2, 1, .8), lty=1:2, title="rf", inset=c(0.05, 0.05))
+
+# Add decorations to the plot.
+
+title(main="Sensitivity/Specificity (tpr/tnr)  loans_df.csv ",
+    sub=paste("Rattle", format(Sys.time(), "%Y-%b-%d %H:%M:%S"), Sys.info()["user"]))
+grid()
+
+#=======================================================================
+# Rattle timestamp: 2019-09-07 19:09:31 x86_64-apple-darwin15.6.0 
+
+# Score the testing dataset. 
+
+# Obtain probability scores for the Random Forest model on loans_df.csv [test].
+
+crs$pr <- predict(crs$rf, newdata=na.omit(crs$dataset[crs$test, c(crs$input)]))
+
+# Extract the relevant variables from the dataset.
+
+sdata <- subset(crs$dataset[crs$test,], select=c("targetloanstatus"))
+
+# Output the combined data.
+
+write.csv(cbind(sdata, crs$pr), file="loans_df_test_score_idents.csv", row.names=FALSE)
