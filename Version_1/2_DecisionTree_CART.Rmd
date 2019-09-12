@@ -1,0 +1,204 @@
+---
+title: '2_Decision Tree Modelling: CART'
+output: html_notebook
+---
+```{r, message=FALSE}
+pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr)
+
+str(loans_df)
+loans_df = loans_df[,c(8,1:7,9:20)]
+
+# Create the training and test datasets
+set.seed(123)
+
+# Step 1: Get row numbers for the training data
+trainRowNumbers <- createDataPartition(loans_df$targetloanstatus, p=0.7, list=FALSE)
+
+# Step 2: Create the training  dataset
+trainData <- loans_df[trainRowNumbers,]
+
+# Step 3: Create the test dataset
+testData <- loans_df[-trainRowNumbers,]
+
+# Store X and Y for later use.
+x = trainData[, 2:20]
+y = trainData$targetloanstatus
+
+# One-Hot Encoding
+# Creating dummy variables is converting a categorical variable to as many binary variables as here are categories.
+dummies_model <- dummyVars(targetloanstatus ~ ., data=trainData)
+
+# Create the dummy variables using predict. 
+# The Y variable (targetloanstatus) will not be present in trainData_mat.
+# Showing warning message is fine
+trainData_mat <- predict(dummies_model, newdata = trainData)
+
+# # Convert to dataframe
+trainData <- data.frame(trainData_mat)
+
+# # See the structure of the new dataset
+str(trainData)
+
+
+# For our problem, let’s convert all the numeric variables to range between 0 and 1, 
+# by setting method=range in preProcess().
+
+preProcess_range_model <- preProcess(trainData, method='range')
+trainData <- predict(preProcess_range_model, newdata = trainData)
+
+# Append the Y variable
+trainData$targetloanstatus <- y
+
+apply(trainData[, 1:ncol(trainData)], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
+glimpse(trainData)
+
+#-----------------------------------------------------------------------------#
+
+# One-Hot Encoding
+# Used the dummies_model already created
+# Create the dummy variables using predict. 
+# The Y variable (targetloanstatus) will not be present in testData_mat.
+# Showing warning message is fine
+testData_mat = predict(dummies_model, newdata = testData)
+
+# Convert to dataframe
+testData1 = data.frame(testData_mat)
+
+# Transform the features to range between 0 and 1 
+# using the already created preProcess_range_model
+testData2 = predict(preProcess_range_model, newdata = testData1)
+
+str(testData2)
+str(trainData)
+#-----------------------------------------------------------------------------#
+
+# use caret to downsample the train dataset ----------------------------------#
+
+trainDataDN <- loans_df[trainRowNumbers,]
+trainDataDN = downSample(trainDataDN, y = as.factor(trainDataDN$targetloanstatus), list = FALSE)
+
+glimpse(trainDataDN)
+trainDataDN = trainDataDN[,-21]
+
+table(trainDataDN$targetloanstatus)
+
+#write.csv(trainDataDN, "trainDataDN.csv", row.names = F)
+#-----------------------------------------------------------------------------#
+
+# CART Tune hyper parameters by setting tuneLength
+set.seed(123)
+
+library(rpart)
+library(rattle)
+# Train with gini model
+model_rpart_gini <- rpart(formula = targetloanstatus ~.,
+                           data = trainDataDN,
+                           method = "class",
+                           parms = list (split = "gini"))
+
+model_rpart_gini
+rattle::fancyRpartPlot(model_rpart_gini)
+varImp(object=model_rpart_gini)
+#-----------------------------------------------------------------------------#
+# Predict on testData and Compute the confusion matrix, ROC & AUC 
+testData1 <- loans_df[-trainRowNumbers,]
+predict_set = predict(model_rpart_gini, testData1, type = "class") 
+
+confusionMatrix(reference = actual_set, 
+                data = predict_set, 
+                mode='everything', 
+                positive='Default')
+
+pROC::roc(actual_set, as.numeric(predict_set), ci = T, plot = T)
+
+#-----------------------------------------------------------------------------#
+
+# Train with information-based model
+model_rpart_information <- rpart(formula = targetloanstatus ~.,
+                                  data = trainDataDN,
+                                  method = "class",
+                                  parms = list (split = "information"))
+
+model_rpart_information
+rattle::fancyRpartPlot(model_rpart_information)
+varImp(object=model_rpart_information)
+#-----------------------------------------------------------------------------#
+# Predict on testData and Compute the confusion matrix, ROC & AUC 
+predict_set = predict(model_rpart_information, testData1, type = "class") 
+
+confusionMatrix(reference = actual_set, 
+                data = predict_set, 
+                mode='everything', 
+                positive='Default')
+
+pROC::roc(actual_set, as.numeric(predict_set), ci = T, plot = T)
+
+#-----------------------------------------------------------------------------#
+
+
+model_rpart1 <- rpart(targetloanstatus ~ .,
+                      data=trainDataDN,
+                      method="class",
+                      parms=list(split="information"),
+                      control=rpart.control(minsplit=5,
+                                            minbucket=2,
+                                            usesurrogate=0, 
+                                            maxsurrogate=0),model=TRUE)
+model_rpart1
+rattle::fancyRpartPlot(model_rpart1)
+varImp(object=model_rpart1)
+#-----------------------------------------------------------------------------#
+# Predict on testData and Compute the confusion matrix, ROC & AUC 
+predict_set = predict(model_rpart1, testData1, type = "class") 
+
+confusionMatrix(reference = actual_set, 
+                data = predict_set, 
+                mode='everything', 
+                positive='Default')
+
+pROC::roc(actual_set, as.numeric(predict_set), ci = T, plot = T)
+
+#-----------------------------------------------------------------------------#
+# Cross-validate a bagged tree model in caret
+# Define the training control
+fitControl = trainControl(
+  method = 'cv',                   # k-fold cross validation
+  number = 5,                      # number of folds
+  savePredictions = 'all',       # saves predictions for optimal tuning parameter
+  classProbs = T,                  # should class probabilities be returned
+  summaryFunction=twoClassSummary,  # results summary function
+  sampling = "up"
+) 
+
+#-----------------------------------------------------------------------------#
+
+model_rpart = train(targetloanstatus ~ ., data=trainData, 
+                    method='rpart', 
+                    tuneLength = 5, 
+                    metric='ROC', 
+                    trControl = fitControl)
+model_rpart
+plot(model_rpart)
+#saveRDS(model_rpart, "model_rpart.RDS")
+
+#Variable Importance
+var1 = varImp(object=model_rpart)
+var1
+#Plotting Varianle importance
+plot(var1, main=paste(model_rpart$modelInfo[1], "Variable Importance"))
+
+# rattle::fancyRpartPlot(model_rpart$finalModel) # too large to be plotted
+
+#-----------------------------------------------------------------------------#
+# Predict on testData and Compute the confusion matrix, ROC & AUC 
+predict_set = predict(model_rpart, testData2) # Transformed testData
+actual_set = testData$targetloanstatus
+
+confusionMatrix(reference = actual_set, 
+                data = predict_set, 
+                mode='everything', 
+                positive='Default')
+
+roc1 = pROC::roc(actual_set, as.numeric(predict_set), ci = T, plot = T)
+roc1
+```
