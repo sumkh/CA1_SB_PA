@@ -1,93 +1,98 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr)
 
-setwd("C:/Users/nelso/Documents/Masters/EBA5002/CA Doc/data")
+setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 #setwd("~/WorkDirectory")
 
-loans_df = read.csv("cleanedloans.csv",stringsAsFactors = TRUE)
-loans_df$targetloanstatus = as.factor(loans_df$targetloanstatus)
+loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
+tofactor = c("targetloanstatus","creditpolicy","term")
+loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
 
-loans_df = loans_df %>%
-  filter(grade == "B") %>%
-  select(-profit, -loss, -grade)
-# Modelling ------------------------------------------------------------------#
-
+# Modelling
+# Sampling
+##########
 #Create our training set using stratified sampling.
 #set initial seed for reproducibility
 set.seed(123)
+
 # collect the data indices returned in a list
-inds = createDataPartition(1:nrow(loans_df), p=0.7, list=FALSE,times=1) 
+inds = createDataPartition(1:nrow(loans_df), p=0.7, list=FALSE,times=1)
 
-loan_dftrain = loans_df[inds,]
-nrow(loan_dftrain)/nrow(loans_df)
-dim(loan_dftrain)
+loans_dftrain = loans_df[inds,]
+nrow(loans_dftrain)/nrow(loans_df)
+dim(loans_dftrain)
 
-loan_dftest = loans_df[-inds,]
-nrow(loan_dftest)/nrow(loans_df)
+loans_dftest = loans_df[-inds,]
+nrow(loans_dftest)/nrow(loans_df)
 
 #some exploration
-loan_dftrain %>%
+loans_dftrain %>%
   group_by(targetloanstatus) %>%
-  summarise(avgint = mean(intrate), avginsta = mean(installment))
+  summarise(avgint = mean(intrate), avgloanamnt = mean(loanamnt))
 
-loan_dftrain %>%
+loans_dftrain %>%
   group_by(targetloanstatus) %>%
   count() %>%
-  mutate(perc = n/nrow(loan_dftrain))
+  mutate(perc = n/nrow(loans_dftrain))
 
-# use caret to upsample the train dataset ------------------------------------#
-loan_dftrainUP = upSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
-glimpse(loan_dftrainUP)
-table(loan_dftrainUP$loanstatus, loan_dftrainUP$targetloanstatus)
-loan_dftrainUP = select(loan_dftrainUP, -"loanstatus") # remove redundent variable loanstatus
+# use caret to upsample the train dataset
+loans_dftrainUP = upSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
+glimpse(loans_dftrainUP)
 
-# write.csv(loan_dftrainUP, "loan_dftrainUP.csv", row.names = F)
-# use caret to downsample the train dataset ----------------------------------#
-loan_dftrainDN = downSample(loan_dftrain, y = as.factor(loan_dftrain$targetloanstatus), list = FALSE, yname = "loanstatus")
-glimpse(loan_dftrainDN)
-table(loan_dftrainDN$loanstatus, loan_dftrainDN$targetloanstatus)
-loan_dftrainDN = select(loan_dftrainDN, -"loanstatus") # remove redundent variable loanstatus
-
-# write.csv(loan_dftrainDN, "loan_dftrainDN.csv", row.names = F)
-#-----------------------------------------------------------------------------#
+# use caret to downsample the train dataset
+loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
+glimpse(loans_dftrainDN)
+##########
 
 # Develop model
-
+##########
 # Logistic Regression model
 
-loan_dfglm <- glm(formula = targetloanstatus ~ .,
-                  family=binomial,  data=loan_dftrainDN)
-summary(loan_dfglm)
-vif(loan_dfglm)
+loans_dfglm <- glm(formula = targetloanstatus ~ .,
+                  family=binomial,  data=loans_dftrainDN)
+summary(loans_dfglm)
+vif(loans_dfglm)
+# vif >10  for intrate and grade. Remove grade from domain knowledge.
 
-# vif >10  for loanamnt, intrate, installment indicating high multicollinearity
+loans_dfglm <- glm(formula = targetloanstatus ~ . -grade,
+                   family=binomial,  data=loans_dftrainDN)
+summary(loans_dfglm)
+vif(loans_dfglm)
 
 # try using step function, step function tries to optimize a lm/glm model by automatically add/dropping relevant indep variables.
-loan_dfglm2 = step(loan_dfglm, trace = F)
-summary(loan_dfglm2)
+loans_dfglm2 = step(loans_dfglm, trace = F)
+summary(loans_dfglm2)
+vif(loans_dfglm2)
 
-
-vif(loan_dfglm2)
-
-# vif >10  for intrate indicating high multicollinearity
-
-attach(loan_dfglm2)
+attach(loans_dfglm2)
 pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)
 anova
-detach(loan_dfglm2)
-# p value = 0 - correct??
-# use anova instead
-anova(loan_dfglm2, test="Chisq")
+detach(loans_dfglm2)
+# using anova to check remaining variables.
+anova(loans_dfglm2, test="Chisq")
+#identifies revolbal and emplength as insignificant variables.
 
-# verify on test set
-pdataglm <- predict(loan_dfglm2, newdata = loan_dftest, type = "response")
+loans_dfglm3 <- glm(formula = targetloanstatus ~ creditpolicy + loanamnt + term + intrate + 
+                      inqlast6mths + revolutil + logannualinc + purpose_mod,
+                   family=binomial,  data=loans_dftrainDN)
+summary(loans_dfglm3)
+vif(loans_dfglm3)
+
+# Perform prediction on trainset and look at confusion matrix.
+pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
+pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
-confusionMatrix(data = as.factor(as.numeric(pdataglm>0.5)), reference = loan_dftest$targetloanstatus)
 
+confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 
 library(pROC)
 #roc syntax: (actual results, predicted probabilities)
-roc_glm = roc(as.numeric(loan_dftest$targetloanstatus),pdataglm)
-# accuracy = 0.851
+roc_glm_train = roc(as.numeric(loans_dftrainDN$targetloanstatus),pdataglm_train)
+roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
+plot(roc_glm_train, print.auc = TRUE)
+plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
+legend(0.1,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
+# AUC = 0.700
 
 # Build a Random Forest model. This takes a while.
 control <- trainControl(method="repeatedcv", number=10, repeats=3)
