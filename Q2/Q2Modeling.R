@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, xgboost)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr,xgboost)
 
 #setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
@@ -326,4 +326,3 @@ results = data.frame(actual = loan_dftest$targetloanstatus, prediction = mypredi
 matrix_table3 = table(results)
 
 accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
-round(accuracyNN, 3)
