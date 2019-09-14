@@ -420,3 +420,39 @@ predictNN_train_roc <- compute(nnmodel, my_data2)$net.result ## add this line
 ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##amend this line right at the end of our codes
 plot(ROC_NNtrain, print.auc = TRUE)
 plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+
+########
+
+# Threshold determination
+########
+
+loans_pnl = read.csv("loansfortest.csv")
+tn = median((loans_pnl %>% filter(profit >0))$profit)
+fn = median((loans_pnl %>% filter(loss >0))$loss)
+fp = median(loans_pnl$potl_profit)
+
+# to determine optimum threshold point
+pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
+  thres = seq(0,1,0.01)
+  mydf = data.frame(Threshold = numeric(),
+                    Profits = numeric(),
+                    Missed_Profits = numeric(),
+                    Losses = numeric(),
+                    Combined = numeric())
+  for (i in thres) {
+    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
+    profits = cm[["table"]][1] * tn
+    lost_prof = cm[["table"]][2] * fp
+    losses = cm[["table"]][3] * fn
+    total = profits - lost_prof - losses
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total)
+  }
+  return(mydf)
+}
+
+threshold_test = pnl(pdataglm_test,loans_dftest$targetloanstatus, fp, fn, tn)
+threshold_test %>% 
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level")
