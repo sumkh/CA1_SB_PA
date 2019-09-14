@@ -1,6 +1,7 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, boot)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, xgboost)
 
-setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+#setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
 #setwd("~/WorkDirectory")
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
@@ -42,13 +43,12 @@ glimpse(loans_dftrainUP)
 loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainDN)
 ##########
-
 # Develop model
 ##########
 # Logistic Regression model
 
 loans_dfglm <- glm(formula = targetloanstatus ~ .,
-                  family=binomial,  data=loans_dftrainDN)
+                   family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm)
 vif(loans_dfglm)
 # vif >10  for intrate and grade. Remove grade from domain knowledge.
@@ -73,7 +73,7 @@ anova(loans_dfglm2, test="Chisq")
 #identifies revolbal and emplength as insignificant variables.
 
 loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . -revolbal - emplength),
-                   family=binomial,  data=loans_dftrainDN)
+                    family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
 
@@ -84,7 +84,7 @@ loans_dfglmbag = predictbag(myglm,loans_dftrainDN, method = "max")
 # Perform prediction on trainset and look at confusion matrix.
 pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
-confusionMatrix(data = as.factor(as.numeric(a>0.5)), reference = loans_dftrainDN$targetloanstatus)
+pdataglmbag_test = predictbag(loans_dfglmbag, loans_dftest, type = "response")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
 confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
@@ -94,21 +94,98 @@ library(pROC)
 #roc syntax: (actual results, predicted probabilities)
 roc_glm_train = roc(as.numeric(loans_dftrainDN$targetloanstatus),pdataglm_train)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
+roc_glmbag_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglmbag_test)
 plot(roc_glm_train, print.auc = TRUE)
 plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
-legend(0.1,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
-# AUC = 0.700
+plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
-# loans_dfglm4 = cv.glm(data = loans_dftrainDN,
-#                       glmfit = loans_dfglm3,
-#                       cost = function(r, pi = 0) mean(abs(r- pi)>1),
-#                       K = 10)
+#Random Forest
+
+st = Sys.time() 
+rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
+                      ntree = 400,
+                      mtry = 2,
+                      importance = TRUE,
+                      cutoff=c(0.5,1-0.5),
+                      na.action=na.exclude)
+Sys.time()-st #11secs
+plot(rf_dn)
+st=Sys.time()
+t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
+            stepFactor = 0.5,
+            plot = TRUE,
+            ntreeTry = 400,
+            trace = TRUE,
+            improve = 0.05)
+# mtry 2 has optimum 
+Sys.time()-st
+
+# Perform prediction on trainset and look at confusion matrix.
+pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainDN, type = "response")
+pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
+
+#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
+
+confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainDN$targetloanstatus)
+confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
+
+
+pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainDN, type = "prob")
+pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
+
+#roc syntax: (actual results, predicted probabilities)
+roc_rf_train = roc(loans_dftrainDN$targetloanstatus,pdatarf_train_roc[,1])
+roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,1])
+plot(roc_rf_train, print.auc = TRUE)
+plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
+legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
+# AUC = 0.696
+
+# boosting
+train_x = data.matrix(loans_dftrainDN[,-7])
+train_y = loans_dftrainDN[,7]
+train_y = ifelse(train_y=="1","1","0")
+test_x = data.matrix(loans_dftest[,-7])
+test_y = loans_dftest[,7]
+test_y = ifelse(test_y=="1","1","0")
+
+xgb_train = xgb.DMatrix(data=train_x, label=train_y)
+xgb_test = xgb.DMatrix(data=test_x, label=test_y)
+
+params <- list(booster = "gbtree", objective = "binary:logistic", 
+               eta=0.3, gamma=0, max_depth=6, min_child_weight=1, 
+               subsample=1, colsample_bytree=1)
+#try xgboost cross validation
+xgbcv = xgb.cv(params = params, data = xgb_train, nrounds = 100, nfold = 5, 
+               showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
+
+which.min((xgbcv[["evaluation_log"]][["test_error_mean"]]))
+#8th iteration gives lowest test_error_mean
+
+xgbc <- xgb.train(params=params,data = xgb_train, nfold = 5, nrounds = 8, verbose = FALSE,
+                  eval_metric = 'auc')
+
+x1_dn = predict(xgbc, xgb_train,type="prob")
+x2_dn = predict(xgbc, xgb_test,type="prob")
+
+x1_dn = as.factor(ifelse(x1_dn>0.5,"1","0"))
+x2_dn = as.factor(ifelse(x2_dn>0.5,"1","0"))
+
+confusionMatrix(x1_dn,loans_dftrainDN$targetloanstatus)
+confusionMatrix(x2_dn,loans_dftest$targetloanstatus)
+
+roc(loans_dftrainDN$targetloanstatus,predict(xgbc, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
+plot.roc(loans_dftest$targetloanstatus,predict(xgbc, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE,col="blue")
+#AUC: 0.69
+mat = xgb.importance(model=xgbc)
+xgb.plot.importance (importance_matrix = mat[1:20]) 
+
+library(pROC)
 
 # Build a Random Forest model. This takes a while.
-control <- trainControl(method="repeatedcv", 
-                        number=10, 
-                        repeats=3)
-loans_dfrf = train(formula(loans_dfglm3), data = loans_dftrainDN, model = "rf", metric = "ROC", trControl = control)
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+model2 = train(targetloanstatus ~. , data = loan_dftrainDN, model = "rf", metric = "Accuracy", trControl = control)
 
 # Build an adaboost model.
 library(adabag)
@@ -118,7 +195,7 @@ library(dplyr)
 
 loan_dftrainDNada = loan_dftrainDN  %>% 
   mutate(targetloanstatus = factor(targetloanstatus, 
-                        labels = make.names(levels(targetloanstatus))))
+                                   labels = make.names(levels(targetloanstatus))))
 
 grid <- expand.grid(mfinal = (1:3)*3, maxdepth = c(1, 3),
                     coeflearn = c("Breiman", "Freund", "Zhu"))
@@ -131,16 +208,17 @@ cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
                        seeds = seeds)
 
 model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada, 
-                            method = "AdaBoost.M1",
-                            tuneGrid = grid, 
-                            trControl = cctrl1,
-                            metric = "ROC", 
-                            preProc = c("center", "scale"))
+                method = "AdaBoost.M1",
+                tuneGrid = grid, 
+                trControl = cctrl1,
+                metric = "ROC", 
+                preProc = c("center", "scale"))
 
 # Generate textual output of the 'Random Forest' model.
 
-pred2 = predict(loans_dfrf, loans_dftest, type = "prob")
-roc_rf = roc(as.numeric(loans_dftest$targetloanstatus),pred2$"1")
+loan_dfrf
+pred2 = predict(model2, loan_dftest, type = "prob")
+roc_rf = roc(as.numeric(loan_dftest$targetloanstatus),pred2$"1")
 plot(roc_glm, print.auc = TRUE)
 plot(roc_rf, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
 
@@ -249,28 +327,3 @@ matrix_table3 = table(results)
 
 accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
 round(accuracyNN, 3)
-
-# Threshold determination
-##########
-pnl = function(predict, reference, fp = 500, fn = 1000) {
-  thres = seq(0,1,0.01)
-  mydf = data.frame(Threshold = numeric(),
-                    Profits = numeric(),
-                    L_Profits = numeric(),
-                    Losses = numeric(),
-                    Combined = numeric())
-  for (i in thres) {
-    cm = confusionMatrix(data = as.factor(as.numeric(pdataglm>i)), reference = loan_dftrainDN$targetloanstatus)
-    profits = cm[["table"]][1] * fp
-    lost_prof = cm[["table"]][2] * fp
-    losses = cm[["table"]][3] * fn
-    total = profits - lost_prof - losses
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total)
-  }
-  return(mydf)
-}
-# accuracy = 0.851
-a = pnl(pdataglm,loan_dftrainDN$targetloanstatus, 3000, 10000)
-a %>% ggplot(aes(x = Threshold, y = Combined)) +
-  geom_line()
-#######
