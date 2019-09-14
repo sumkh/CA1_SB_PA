@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr,xgboost)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr)
 
 setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 #setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
@@ -42,11 +42,11 @@ glimpse(loans_dftrainUP)
 # use caret to downsample the train dataset
 loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainDN)
-##########
+########
 # Develop model
-##########
+########
 # Logistic Regression model
-
+########
 loans_dfglm <- glm(formula = targetloanstatus ~ .,
                    family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm)
@@ -100,8 +100,10 @@ plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
+########
 #Random Forest
-
+########
+library(randomForest)
 st = Sys.time() 
 rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
                       ntree = 400,
@@ -142,7 +144,10 @@ plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green"
 legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
 # AUC = 0.696
 
+########
 # boosting
+########
+library(xgboost)
 train_x = data.matrix(loans_dftrainDN[,-7])
 train_y = loans_dftrainDN[,7]
 train_y = ifelse(train_y=="1","1","0")
@@ -153,39 +158,65 @@ test_y = ifelse(test_y=="1","1","0")
 xgb_train = xgb.DMatrix(data=train_x, label=train_y)
 xgb_test = xgb.DMatrix(data=test_x, label=test_y)
 
-params <- list(booster = "gbtree", objective = "binary:logistic", 
-               eta=0.3, gamma=0, max_depth=6, min_child_weight=1, 
-               subsample=1, colsample_bytree=1)
+params_tree <- list(booster = "gbtree", 
+               eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1,
+               objective = "binary:logistic")
+
+params_linear = list(booster = "gblinear",
+                     feature_selector = "cyclic", lambda = 0, alpha = 0,
+                     objective = "binary:logistic")
+
 #try xgboost cross validation
-xgbcv = xgb.cv(params = params, data = xgb_train, nrounds = 100, nfold = 5, 
+xgbcv_tree = xgb.cv(data = xgb_train, 
+               params = params_tree, nrounds = 100, nfold = 5, 
                showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
 
-which.min((xgbcv[["evaluation_log"]][["test_error_mean"]]))
+xgbcv_linear = xgb.cv(data = xgb_train, 
+                    params = params_linear, nrounds = 100, nfold = 5, 
+                    showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
+
+which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]]))
+which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]]))
 #8th iteration gives lowest test_error_mean
 
-xgbc <- xgb.train(params=params,data = xgb_train, nfold = 5, nrounds = 8, verbose = FALSE,
-                  eval_metric = 'auc')
+xgbc_tree <- xgb.train(data = xgb_train, 
+                  params = params_tree, nfold = 5, nrounds = which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]])), 
+                  verbose = FALSE, eval_metric = 'auc')
+xgbc_linear <- xgb.train(data = xgb_train, 
+                       params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]])), 
+                       verbose = FALSE, eval_metric = 'auc')
 
-x1_dn = predict(xgbc, xgb_train,type="prob")
-x2_dn = predict(xgbc, xgb_test,type="prob")
+x1_dn_tree = predict(xgbc_tree, xgb_train, type="prob")
+x2_dn_tree = predict(xgbc_tree, xgb_test, type="prob")
 
-x1_dn = as.factor(ifelse(x1_dn>0.5,"1","0"))
-x2_dn = as.factor(ifelse(x2_dn>0.5,"1","0"))
+x1_dn_tree = as.factor(ifelse(x1_dn_tree>0.5,"1","0"))
+x2_dn_tree = as.factor(ifelse(x2_dn_tree>0.5,"1","0"))
 
-confusionMatrix(x1_dn,loans_dftrainDN$targetloanstatus)
-confusionMatrix(x2_dn,loans_dftest$targetloanstatus)
+confusionMatrix(x1_dn_tree,loans_dftrainDN$targetloanstatus)
+confusionMatrix(x2_dn_tree,loans_dftest$targetloanstatus)
 
-roc(loans_dftrainDN$targetloanstatus,predict(xgbc, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
-plot.roc(loans_dftest$targetloanstatus,predict(xgbc, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE,col="blue")
+roc(loans_dftrainDN$targetloanstatus,predict(xgbc_tree, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
+plot.roc(loans_dftest$targetloanstatus,predict(xgbc_tree, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE, col="blue")
 #AUC: 0.69
-mat = xgb.importance(model=xgbc)
-xgb.plot.importance (importance_matrix = mat[1:20]) 
 
-library(pROC)
+mat_tree = xgb.importance(model=xgbc_tree)
+xgb.plot.importance(importance_matrix = mat_tree[1:20]) 
 
-# Build a Random Forest model. This takes a while.
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-model2 = train(targetloanstatus ~. , data = loan_dftrainDN, model = "rf", metric = "Accuracy", trControl = control)
+x1_dn_linear = predict(xgbc_linear, xgb_train, type="prob")
+x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
+
+x1_dn_linear = as.factor(ifelse(x1_dn_linear>0.5,"1","0"))
+x2_dn_linear = as.factor(ifelse(x2_dn_linear>0.5,"1","0"))
+
+confusionMatrix(x1_dn_linear,loans_dftrainDN$targetloanstatus)
+confusionMatrix(x2_dn_linear,loans_dftest$targetloanstatus)
+
+roc(loans_dftrainDN$targetloanstatus,predict(xgbc_linear, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
+plot.roc(loans_dftest$targetloanstatus,predict(xgbc_linear, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE, col="blue")
+
+mat_linear = xgb.importance(model=xgbc_linear)
+xgb.plot.importance(importance_matrix = mat_linear[1:20]) 
+########
 
 # Build an adaboost model.
 library(adabag)
@@ -213,44 +244,6 @@ model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada,
                 trControl = cctrl1,
                 metric = "ROC", 
                 preProc = c("center", "scale"))
-
-# Generate textual output of the 'Random Forest' model.
-
-loan_dfrf
-pred2 = predict(model2, loan_dftest, type = "prob")
-roc_rf = roc(as.numeric(loan_dftest$targetloanstatus),pred2$"1")
-plot(roc_glm, print.auc = TRUE)
-plot(roc_rf, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
-
-# Calculate the Area Under the Curve (AUC).
-
-pred3 = predict(model3,loan_dftest,type = "prob")
-roc_ada = roc(as.numeric(loan_dftest$targetloanstatus),pred3$"X1")
-plot(roc_ada, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
-legend(0.2,0.2, legend = c("GLM","RF","ada"),col=c("black", "green","red"), lty=1, cex=0.8)
-# AUC = 0.5066
-
-# Calculate the AUC Confidence Interval.
-
-pROC::ci.auc(loan_dfrf$y, as.numeric(loan_dfrf$predicted))
-
-# 95% CI: 0.5046-0.5086
-
-# List the importance of the variables.
-
-rn <- round(randomForest::importance(loan_dfrf), 2)
-rn[order(rn[,3], decreasing=TRUE),]
-
-# perform validation on test set
-
-predictloan_dfrf <- predict(loan_dfrf, newdata=loan_dftest,
-                            type="class")
-
-matrix_table2 = table(loan_dftest$targetloanstatus,predictloan_dfrf)
-accuracyrf = sum(diag(matrix_table2))/sum(matrix_table2)
-round(accuracyrf, 3)
-
-# accuracy = 0.85
 
 # adaboost (WIP)
 #############################################################
