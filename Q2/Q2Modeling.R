@@ -267,55 +267,125 @@ loan_dfrpart
 
 # Build a neural network model using the neuralnet package.
 
+# repeat loading file (for convenience) - to remove eventually
+loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
+tofactor = c("targetloanstatus","creditpolicy","term")
+loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
+
 library(neuralnet)
 
 # Build the model.
 
-summary(loan_dftrain)
+summary(loans_df)
 
 # data preparation
-tempdata1 <- model.matrix(~creditpolicy-1, subset(loan_dftrain, select = creditpolicy))
-tempdata2 <- model.matrix(~emp10years-1, subset(loan_dftrain, select = emp10years))
-tempdata3 <- model.matrix(~delin2years-1, subset(loan_dftrain, select = delin2years))
-tempdata4 <- model.matrix(~homeowner-1, subset(loan_dftrain, select = homeowner))
-tempdata5 <- model.matrix(~grade-1, subset(loan_dftrain, select = grade))
-tempdata6 <- model.matrix(~annualinc_bin-1, subset(loan_dftrain, select = annualinc_bin))
-tempdata7 <- model.matrix(~revolbal_bin-1, subset(loan_dftrain, select = revolbal_bin))
-tempdata8 <- model.matrix(~verified-1, subset(loan_dftrain, select = verified))
-tempdata9 <- model.matrix(~purpose_mod-1, subset(loan_dftrain, select = purpose_mod))
+tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_df, select = creditpolicy))
+tempdata2 <- model.matrix(~term-1, subset(loans_df, select = term))
+tempdata3 <- model.matrix(~grade-1, subset(loans_df, select = grade))
+tempdata4 <- model.matrix(~delin2years-1, subset(loans_df, select = delin2years))
+tempdata5 <- model.matrix(~homeowner-1, subset(loans_df, select = homeowner))
+tempdata6 <- model.matrix(~verified-1, subset(loans_df, select = verified))
+tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_df, select = purpose_mod))
 
-loan_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                             tempdata7, tempdata8, tempdata9, subset(loan_dftrain, select=c(loanamnt, term, intrate, installment, emplength, dti, inqlast6mths,openacc, revolutil, totalacc, targetloanstatus)))
+loans_dfNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
+                         tempdata7, subset(loans_df, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,revolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
-loan_dftrain$loanamnt <- scale(loan_dftrain$loanamnt)
-loan_dftrain$term <- scale(loan_dftrain$term)
-loan_dftrain$intrate <- scale(loan_dftrain$intrate)
-loan_dftrain$installment <- scale(loan_dftrain$installment)
-loan_dftrain$emplength <- scale(loan_dftrain$emplength)
-loan_dftrain$dti <- scale(loan_dftrain$dti)
-loan_dftrain$inqlast6mths <- scale(loan_dftrain$inqlast6mths)
-loan_dftrain$openacc <- scale(loan_dftrain$openacc)
-loan_dftrain$revolutil <- scale(loan_dftrain$revolutil)
-loan_dftrain$totalacc<- scale(loan_dftrain$totalacc)
+loans_df$loanamnt <- scale(loans_df$loanamnt)
+loans_df$intrate <- scale(loans_df$intrate)
+loans_df$emplength <- scale(loans_df$emplength)
+loans_df$dti <- scale(loans_df$dti)
+loans_df$inqlast6mths <- scale(loans_df$inqlast6mths)
+loans_df$revolbal <- scale(loans_df$revolbal)
+loans_df$revolutil <- scale(loans_df$revolutil)
+loans_df$totalacc<- scale(loans_df$totalacc)
+loans_df$logannualinc<- scale(loans_df$logannualinc)
+loans_df$ratioacc<- scale(loans_df$ratioacc)
 
-param_nodes_hidden_layer <- c(5,3,3) # No. of nodes at each hidden layer
+# split into train and test set
+# collect the data indices returned in a list
+inds = createDataPartition(1:nrow(loans_df), p=0.7, list=FALSE,times=1)
+
+loans_dftrainNN = loans_dfNN[inds,]
+nrow(loans_dftrainNN)/nrow(loans_dftrainNN)
+dim(loans_dftrainNN)
+
+loans_dftestNN = loans_dfNN[-inds,]
+nrow(loans_dftestNN)/nrow(loans_dftestNN)
+
+# use caret to downsample the train dataset
+loans_dftrainNNDN = downSample(loans_dftrainNN, y = as.factor(loans_dftrainNN$targetloanstatus), list = TRUE)[[1]]
+glimpse(loans_dftrainNNDN)
+
+# define neurel network parameter
+param_nodes_hidden_layer <- c(3,3,3,3,3,3,1) # No. of nodes at each hidden layer # did not converge
 param_max_iteration <- 5e4 # No. of iterations in training
-param_learning_rate <- 0.1 # the learning rate during back propagation
+param_learning_rate <- 0.1 # the learniNg rate during back propagation
 
-# combine the attributes name for the convenience.
-names <- colnames(loan_dftrainNN)
+# combine the attributes name for convenience.
+names <- colnames(loans_dftrainNNDN)
 f <- as.formula(paste("targetloanstatus ~", paste(names[!names %in% "targetloanstatus"], collapse = " + ")))
 
 # train model
-# this takes a long duration
-nnmodel <- neuralnet(f, data = loan_dftrainNN, hidden=param_nodes_hidden_layer, stepmax=param_max_iteration, learningrate = param_learning_rate, linear.output=FALSE)  
+
+st = Sys.time() 
+nnmodel <- neuralnet(f, data = loans_dftrainNNDN, hidden=param_nodes_hidden_layer, stepmax=param_max_iteration, learningrate = param_learning_rate, algorithm = "rprop+", linear.output=FALSE)  
+Sys.time() - st
+
+nnmodel$result.matrix
+plot(nnmodel)
+
+# save model in rds format (to save time rerunning model)
+saveRDS(nnmodel, file = "neuralnetmodel.rds")
+
+# read model
+nnmodel <- readRDS("neuralnetmodel.rds") 
 
 # use confusion matrix to evaluate model performance on test data.
 
-mypredict <- compute(nnmodel, loan_dftest[,-8])$net.result
-mypredict <- sapply(mypredict, round, digits=0)
-results = data.frame(actual = loan_dftest$targetloanstatus, prediction = mypredict)
+my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
+predictNN_test <- compute(nnmodel, my_data)$net.result[,1]
+predictNN_test <- sapply(predictNN_test, round, digits=0)
 
-matrix_table3 = table(results)
+# predictNN_test = factor(predictNN_test, levels = c(1,0), labels = c("Default", "No Default"))
+predictNN_test = factor(predictNN_test)
 
-accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
+head(predictNN_test)
+length(predictNN_test)
+
+head(loans_dftestNN$targetloanstatus)
+length(loans_dftestNN$targetloanstatus)
+
+#loans_dftestNN$targetloanstatus = factor(loans_dftestNN$targetloanstatus, levels = c(1,0), labels = c("Default", "No Default"))
+#loans_dftestNN$targetloanstatus = factor(loans_dftestNN$targetloanstatus)
+#head(loans_dftestNN$targetloanstatus)
+confusionMatrix(data = predictNN_test, reference = loans_dftestNN$targetloanstatus)
+
+# use confusion matrix to evaluate model performance on train data.
+
+my_data2 <- subset(loans_dftrainNNDN, select = -c(targetloanstatus))
+
+predictNN_train <- compute(nnmodel, my_data2)$net.result[,1]
+# $net,result gives one level and gives the probability of each sample to be a given category
+predictNN_train <- sapply(predictNN_train, round, digits=0)
+# predictNN = factor(predictNN, levels = c(1,0), labels = c("Default", "No Default"))
+head(predictNN_train)
+predictNN_train = factor(predictNN_train)
+length(predictNN_train)
+
+head(loans_dftrainNNDN$targetloanstatus)
+length(loans_dftrainNNDN$targetloanstatus)
+
+loans_dftrainNNDN$targetloanstatus = factor(loans_dftrainNNDN$targetloanstatus)
+head(loans_dftrainNNDN$targetloanstatus)
+
+confusionMatrix(data = predictNN_train, reference = loans_dftrainNNDN$targetloanstatus)
+
+#roc syntax: (actual results, predicted probabilities)
+
+# plot roc for train and test set
+ROC_NNtrain = roc(as.numeric(loans_dftrainNNDN$targetloanstatus),as.numeric(predictNN_train))
+plot(ROC_NNtrain, print.auc = TRUE)
+ROC_NNtest = roc(as.numeric(loans_dftestNN$targetloanstatus),as.numeric(predictNN_test))
+plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+
+
