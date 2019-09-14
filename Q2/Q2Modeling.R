@@ -1,7 +1,7 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr,xgboost)
 
-#setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
+setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+#setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
 #setwd("~/WorkDirectory")
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
@@ -79,12 +79,12 @@ vif(loans_dfglm3)
 
 #Try bagging glm model.
 source("glmbagging.R")
+loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
 
-loans_dfglmbag = predictbag(myglm,loans_dftrainDN, method = "max")
 # Perform prediction on trainset and look at confusion matrix.
 pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
-pdataglmbag_test = predictbag(loans_dfglmbag, loans_dftest, type = "response")
+pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
 confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
