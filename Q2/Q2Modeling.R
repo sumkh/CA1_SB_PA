@@ -413,9 +413,8 @@ confusionMatrix(data = predictNN_train, reference = loans_dftrainNNDN$targetloan
 #roc syntax: (actual results, predicted probabilities)
 
 # plot roc for train and test set
-ROC_NNtrain = roc(as.numeric(loans_dftrainNNDN$targetloanstatus),as.numeric(predictNN_train))
-plot(ROC_NNtrain, print.auc = TRUE)
-ROC_NNtest = roc(as.numeric(loans_dftestNN$targetloanstatus),as.numeric(predictNN_test))
-plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+predictNN_test_roc <- compute(nnmodel, my_data)$net.result ## add this line
+ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) ##amend this line right at the end of our codes
 
-
+predictNN_train_roc <- compute(nnmodel, my_data2)$net.result ## add this line
+ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##amend this line right at the end of our codes
