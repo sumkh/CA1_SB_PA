@@ -43,7 +43,6 @@ glimpse(loans_dftrainUP)
 loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainDN)
 ##########
-
 # Develop model
 ##########
 # Logistic Regression model
@@ -54,7 +53,7 @@ summary(loans_dfglm)
 vif(loans_dfglm)
 # vif >10  for intrate and grade. Remove grade from domain knowledge.
 
-loans_dfglm <- glm(formula = targetloanstatus ~ . -grade,
+loans_dfglm <- glm(formula = update.formula(loans_dfglm, ~ . -grade),
                    family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm)
 vif(loans_dfglm)
@@ -67,32 +66,39 @@ vif(loans_dfglm2)
 attach(loans_dfglm2)
 pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)
 anova
+formula # check current formula after step function.
 detach(loans_dfglm2)
 # using anova to check remaining variables.
 anova(loans_dfglm2, test="Chisq")
 #identifies revolbal and emplength as insignificant variables.
 
-loans_dfglm3 <- glm(formula = targetloanstatus ~ creditpolicy + loanamnt + term + intrate + 
-                      inqlast6mths + revolutil + logannualinc + purpose_mod,
+loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . -revolbal - emplength),
                     family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
 
+#Try bagging glm model.
+source("glmbagging.R")
+
+loans_dfglmbag = predictbag(myglm,loans_dftrainDN, method = "max")
 # Perform prediction on trainset and look at confusion matrix.
 pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
+pdataglmbag_test = predictbag(loans_dfglmbag, loans_dftest, type = "response")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
 confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
 confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 
+library(pROC)
 #roc syntax: (actual results, predicted probabilities)
 roc_glm_train = roc(as.numeric(loans_dftrainDN$targetloanstatus),pdataglm_train)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
+roc_glmbag_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglmbag_test)
 plot(roc_glm_train, print.auc = TRUE)
 plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
-legend(0.1,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
-# AUC = 0.700
+plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
 #Random Forest
 
@@ -320,4 +326,3 @@ results = data.frame(actual = loan_dftest$targetloanstatus, prediction = mypredi
 matrix_table3 = table(results)
 
 accuracyNN = sum(diag(matrix_table3))/sum(matrix_table3)
-round(accuracyNN, 3)
