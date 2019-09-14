@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, boot)
 
 setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 #setwd("~/WorkDirectory")
@@ -53,7 +53,7 @@ summary(loans_dfglm)
 vif(loans_dfglm)
 # vif >10  for intrate and grade. Remove grade from domain knowledge.
 
-loans_dfglm <- glm(formula = targetloanstatus ~ . -grade,
+loans_dfglm <- glm(formula = update.formula(loans_dfglm, ~ . -grade),
                    family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm)
 vif(loans_dfglm)
@@ -66,20 +66,25 @@ vif(loans_dfglm2)
 attach(loans_dfglm2)
 pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)
 anova
+formula # check current formula after step function.
 detach(loans_dfglm2)
 # using anova to check remaining variables.
 anova(loans_dfglm2, test="Chisq")
 #identifies revolbal and emplength as insignificant variables.
 
-loans_dfglm3 <- glm(formula = targetloanstatus ~ creditpolicy + loanamnt + term + intrate + 
-                      inqlast6mths + revolutil + logannualinc + purpose_mod,
+loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . -revolbal - emplength),
                    family=binomial,  data=loans_dftrainDN)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
 
+#Try bagging glm model.
+source("glmbagging.R")
+
+loans_dfglmbag = predictbag(myglm,loans_dftrainDN, method = "max")
 # Perform prediction on trainset and look at confusion matrix.
 pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
+confusionMatrix(data = as.factor(as.numeric(a>0.5)), reference = loans_dftrainDN$targetloanstatus)
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
 confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
@@ -94,9 +99,16 @@ plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green
 legend(0.1,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
 # AUC = 0.700
 
+# loans_dfglm4 = cv.glm(data = loans_dftrainDN,
+#                       glmfit = loans_dfglm3,
+#                       cost = function(r, pi = 0) mean(abs(r- pi)>1),
+#                       K = 10)
+
 # Build a Random Forest model. This takes a while.
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-model2 = train(targetloanstatus ~. , data = loan_dftrainDN, model = "rf", metric = "Accuracy", trControl = control)
+control <- trainControl(method="repeatedcv", 
+                        number=10, 
+                        repeats=3)
+loans_dfrf = train(formula(loans_dfglm3), data = loans_dftrainDN, model = "rf", metric = "ROC", trControl = control)
 
 # Build an adaboost model.
 library(adabag)
@@ -127,9 +139,8 @@ model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada,
 
 # Generate textual output of the 'Random Forest' model.
 
-loan_dfrf
-pred2 = predict(model2, loan_dftest, type = "prob")
-roc_rf = roc(as.numeric(loan_dftest$targetloanstatus),pred2$"1")
+pred2 = predict(loans_dfrf, loans_dftest, type = "prob")
+roc_rf = roc(as.numeric(loans_dftest$targetloanstatus),pred2$"1")
 plot(roc_glm, print.auc = TRUE)
 plot(roc_rf, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
 
