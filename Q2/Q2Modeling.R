@@ -418,3 +418,5 @@ ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) ##amend
 
 predictNN_train_roc <- compute(nnmodel, my_data2)$net.result ## add this line
 ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##amend this line right at the end of our codes
+plot(ROC_NNtrain, print.auc = TRUE)
+plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
