@@ -42,10 +42,12 @@ glimpse(loans_dftrainUP)
 # use caret to downsample the train dataset
 loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainDN)
-########
-# Develop model
-########
-# Logistic Regression model
+###################
+
+# DEVELOP MODEL
+###################
+
+# Logistic Regression
 ########
 loans_dfglm <- glm(formula = targetloanstatus ~ .,
                    family=binomial,  data=loans_dftrainDN)
@@ -101,7 +103,51 @@ plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "re
 legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
 ########
-#Random Forest
+
+# Decision Tree model (rpart)
+########
+library(rpart)
+loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
+                       data=loans_dftrainDN,
+                       method = "class",
+                       parms=list(split="information"),
+                       control= rpart.control(minsplit=5,
+                                              minbucket=2,
+                                              usesurrogate=0, 
+                                              maxsurrogate=0),
+                       model=TRUE)
+
+# Generate a textual view of the Decision Tree model.
+loans_dfrpart
+summary(loans_dfrpart)
+
+#grade is the only selection factor?? rerun without grade.
+
+loans_dfrpart <- rpart(formula = update.formula(loans_dfrpart, ~ . -grade),
+                       data=loans_dftrainDN,
+                       method = "class",
+                       parms=list(split="information"),
+                       control= rpart.control(minsplit=5,
+                                              minbucket=2,
+                                              usesurrogate=0, 
+                                              maxsurrogate=0),
+                       model=TRUE)
+
+loans_dfrpart
+summary(loans_dfrpart)
+#see variable importance
+loans_dfrpart[["variable.importance"]]
+
+pdata_tree = predict(loans_dfrpart, loans_dftest, type = "class")
+confusionMatrix(pdata_tree, reference = loans_dftest$targetloanstatus)
+#get probabilities for ROC curve
+
+pdata_tree = predict(loans_dfrpart, loans_dftest, type = "prob")
+roc_tree_test = roc(as.numeric(loans_dftest$targetloanstatus),pdata_tree[,2])
+plot(roc_tree_test, print.auc = TRUE)
+########
+
+# Random Forest
 ########
 library(randomForest)
 st = Sys.time() 
@@ -132,7 +178,6 @@ pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
 confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainDN$targetloanstatus)
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
 
-
 pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainDN, type = "prob")
 pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
 
@@ -145,6 +190,7 @@ legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8
 # AUC = 0.696
 
 ########
+
 # boosting
 ########
 library(xgboost)
@@ -215,9 +261,12 @@ roc(loans_dftrainDN$targetloanstatus,predict(xgbc_linear, xgb_train,type="prob")
 plot.roc(loans_dftest$targetloanstatus,predict(xgbc_linear, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE, col="blue")
 
 mat_linear = xgb.importance(model=xgbc_linear)
-xgb.plot.importance(importance_matrix = mat_linear[1:20]) 
+xgb.plot.importance(importance_matrix = mat_linear[1:20])
+
 ########
 
+# Adaboost
+########
 # Build an adaboost model.
 library(adabag)
 library(plyr)
@@ -244,29 +293,10 @@ model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada,
                 trControl = cctrl1,
                 metric = "ROC", 
                 preProc = c("center", "scale"))
-
-# adaboost (WIP)
-#############################################################
-
-# Build a Decision Tree model (WIP)
-
-library(rpart)
-loan_dfrpart <- rpart(targetloanstatus ~ .,
-                      data=loan_dftrain,
-                      method="class",
-                      parms=list(split="information"),
-                      control=rpart.control(minsplit=5,
-                                            minbucket=2,
-                                            usesurrogate=0, 
-                                            maxsurrogate=0),
-                      model=TRUE)
-
-# Generate a textual view of the Decision Tree model.
-
-loan_dfrpart
+########
 
 # Build a neural network model using the neuralnet package.
-
+########
 # repeat loading file (for convenience) - to remove eventually
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
