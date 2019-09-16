@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, PRROC, DescTools, dummies)
 
 setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 #setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
@@ -42,6 +42,42 @@ glimpse(loans_dftrainUP)
 # use caret to downsample the train dataset
 loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainDN)
+########
+
+# Evaluation Metric
+########
+
+loans_pnl = read.csv("loansfortest.csv")
+tn = median((loans_pnl %>% filter(profit >0))$profit)
+fn = median((loans_pnl %>% filter(loss >0))$loss)
+fp = median(loans_pnl$potl_profit)
+
+# to determine optimum threshold point
+pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
+  thres = seq(0,1,0.01)
+  mydf = data.frame(Threshold = numeric(),
+                    Profits = numeric(),
+                    Missed_Profits = numeric(),
+                    Losses = numeric(),
+                    Combined = numeric(),
+                    Precision = numeric(),
+                    Recall = numeric(),
+                    F1 = numeric(),
+                    fpr = numeric())
+  for (i in thres) {
+    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
+    profits = cm[["table"]][1] * tn
+    lost_prof = cm[["table"]][2] * fp
+    losses = cm[["table"]][3] * fn
+    total = profits - lost_prof - losses
+    precision = cm[["byClass"]][["Precision"]]
+    recall = cm[["byClass"]][["Recall"]]
+    f1 = cm[["byClass"]][["F1"]]
+    fpr = 1- cm[["byClass"]][["Specificity"]]
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr)
+  }
+  return(mydf)
+}
 ###################
 
 # DEVELOP MODEL
@@ -50,13 +86,13 @@ glimpse(loans_dftrainDN)
 # Logistic Regression
 ########
 loans_dfglm <- glm(formula = targetloanstatus ~ .,
-                   family=binomial,  data=loans_dftrainDN)
+                   family=binomial,  data=loans_dftrain)
 summary(loans_dfglm)
 vif(loans_dfglm)
 # vif >10  for intrate and grade. Remove grade from domain knowledge.
 
 loans_dfglm <- glm(formula = update.formula(loans_dfglm, ~ . -grade),
-                   family=binomial,  data=loans_dftrainDN)
+                   family=binomial,  data=loans_dftrain)
 summary(loans_dfglm)
 vif(loans_dfglm)
 
@@ -75,7 +111,7 @@ anova(loans_dfglm2, test="Chisq")
 #identifies revolbal and emplength as insignificant variables.
 
 loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . -revolbal - emplength),
-                    family=binomial,  data=loans_dftrainDN)
+                    family=binomial,  data=loans_dftrain)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
 
@@ -84,17 +120,17 @@ source("glmbagging.R")
 loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
 
 # Perform prediction on trainset and look at confusion matrix.
-pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrainDN, type = "response")
+pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrain, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
-confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrainDN$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrain$targetloanstatus)
 confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 
 library(pROC)
 #roc syntax: (actual results, predicted probabilities)
-roc_glm_train = roc(as.numeric(loans_dftrainDN$targetloanstatus),pdataglm_train)
+roc_glm_train = roc(as.numeric(loans_dftrain$targetloanstatus),pdataglm_train)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
 roc_glmbag_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglmbag_test)
 plot(roc_glm_train, print.auc = TRUE)
@@ -102,13 +138,36 @@ plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_glm %>% 
+  select(-Precision, -Recall, -F1, -fpr) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+#plot PR curve
+prroc_glm %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_glm %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
+
 ########
 
 # Decision Tree model (rpart)
 ########
 library(rpart)
+library(rattle)
+
+#unbalanced dataset
 loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
-                       data=loans_dftrainDN,
+                       data=loans_dftrain,
                        method = "class",
                        parms=list(split="information"),
                        control= rpart.control(minsplit=5,
@@ -119,10 +178,25 @@ loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
 
 # Generate a textual view of the Decision Tree model.
 loans_dfrpart
+rattle::fancyRpartPlot(loans_dfrpart)
+summary(loans_dfrpart)
+
+#rpart does not see good information gain on the unbalanced data set. For a good decision tree model, balancing of data is required.
+
+loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
+                       data=loans_dftrainDN,
+                       method = "class",
+                       parms=list(split="information"),
+                       control= rpart.control(minsplit=5,
+                                              minbucket=2,
+                                              usesurrogate=0, 
+                                              maxsurrogate=0),
+                       model=TRUE)
+# Generate a textual view of the Decision Tree model.
+rattle::fancyRpartPlot(loans_dfrpart)
 summary(loans_dfrpart)
 
 #grade is the only selection factor?? rerun without grade.
-
 loans_dfrpart <- rpart(formula = update.formula(loans_dfrpart, ~ . -grade),
                        data=loans_dftrainDN,
                        method = "class",
@@ -133,7 +207,7 @@ loans_dfrpart <- rpart(formula = update.formula(loans_dfrpart, ~ . -grade),
                                               maxsurrogate=0),
                        model=TRUE)
 
-loans_dfrpart
+rattle::fancyRpartPlot(loans_dfrpart)
 summary(loans_dfrpart)
 #see variable importance
 loans_dfrpart[["variable.importance"]]
@@ -145,13 +219,35 @@ confusionMatrix(pdata_tree, reference = loans_dftest$targetloanstatus)
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "prob")
 roc_tree_test = roc(as.numeric(loans_dftest$targetloanstatus),pdata_tree[,2])
 plot(roc_tree_test, print.auc = TRUE)
+
+prroc_rpart = pnl(pdata_tree[,2], loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_rpart %>% 
+  select(-Precision, -Recall, -F1, -fpr) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+#plot PR curve
+prroc_rpart %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_rpart$Recall, prroc_rpart$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_rpart %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_rpart$fpr, prroc_rpart$Recall, method = "spline"),3)))
+
+
 ########
 
 # Random Forest
 ########
 library(randomForest)
 st = Sys.time() 
-rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
+rf_dn <- randomForest(targetloanstatus~., loans_dftrain,
                       ntree = 400,
                       mtry = 2,
                       importance = TRUE,
@@ -170,32 +266,52 @@ t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
 Sys.time()-st
 
 # Perform prediction on trainset and look at confusion matrix.
-pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainDN, type = "response")
+pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrain, type = "response")
 pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
 
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
-confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainDN$targetloanstatus)
+confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrain$targetloanstatus)
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
 
-pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainDN, type = "prob")
+pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrain, type = "prob")
 pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
 
 #roc syntax: (actual results, predicted probabilities)
-roc_rf_train = roc(loans_dftrainDN$targetloanstatus,pdatarf_train_roc[,1])
-roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,1])
+roc_rf_train = roc(loans_dftrain$targetloanstatus,pdatarf_train_roc[,2])
+roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,2])
 plot(roc_rf_train, print.auc = TRUE)
 plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
 legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
 # AUC = 0.696
+
+prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_rf %>% 
+  select(-Precision, -Recall, -F1, -fpr) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+#plot PR curve
+prroc_rf %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_rf$Recall, prroc_rf$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_rf %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_rf$fpr, prroc_rf$Recall, method = "spline"),3)))
 
 ########
 
 # boosting
 ########
 library(xgboost)
-train_x = data.matrix(loans_dftrainDN[,-7])
-train_y = loans_dftrainDN[,7]
+train_x = data.matrix(loans_dftrain[,-7])
+train_y = loans_dftrain[,7]
 train_y = ifelse(train_y=="1","1","0")
 test_x = data.matrix(loans_dftest[,-7])
 test_y = loans_dftest[,7]
@@ -221,27 +337,21 @@ xgbcv_linear = xgb.cv(data = xgb_train,
                     params = params_linear, nrounds = 100, nfold = 5, 
                     showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
 
-which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]]))
-which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]]))
+which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]]))
+which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]]))
 #8th iteration gives lowest test_error_mean
 
 xgbc_tree <- xgb.train(data = xgb_train, 
-                  params = params_tree, nfold = 5, nrounds = which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]])), 
+                  params = params_tree, nfold = 5, nrounds = which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]])), 
                   verbose = FALSE, eval_metric = 'auc')
 xgbc_linear <- xgb.train(data = xgb_train, 
-                       params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]])), 
+                       params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]])), 
                        verbose = FALSE, eval_metric = 'auc')
 
 x1_dn_tree = predict(xgbc_tree, xgb_train, type="prob")
 x2_dn_tree = predict(xgbc_tree, xgb_test, type="prob")
 
-x1_dn_tree = as.factor(ifelse(x1_dn_tree>0.5,"1","0"))
-x2_dn_tree = as.factor(ifelse(x2_dn_tree>0.5,"1","0"))
-
-confusionMatrix(x1_dn_tree,loans_dftrainDN$targetloanstatus)
-confusionMatrix(x2_dn_tree,loans_dftest$targetloanstatus)
-
-roc(loans_dftrainDN$targetloanstatus,predict(xgbc_tree, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
+roc(loans_dftrain$targetloanstatus,predict(xgbc_tree, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
 plot.roc(loans_dftest$targetloanstatus,predict(xgbc_tree, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE, col="blue")
 #AUC: 0.69
 
@@ -254,14 +364,34 @@ x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
 x1_dn_linear = as.factor(ifelse(x1_dn_linear>0.5,"1","0"))
 x2_dn_linear = as.factor(ifelse(x2_dn_linear>0.5,"1","0"))
 
-confusionMatrix(x1_dn_linear,loans_dftrainDN$targetloanstatus)
+confusionMatrix(x1_dn_linear,loans_dftrain$targetloanstatus)
 confusionMatrix(x2_dn_linear,loans_dftest$targetloanstatus)
 
-roc(loans_dftrainDN$targetloanstatus,predict(xgbc_linear, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
+roc(loans_dftrain$targetloanstatus,predict(xgbc_linear, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
 plot.roc(loans_dftest$targetloanstatus,predict(xgbc_linear, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE, col="blue")
 
 mat_linear = xgb.importance(model=xgbc_linear)
 xgb.plot.importance(importance_matrix = mat_linear[1:20])
+
+prroc_xgbtree = pnl(x2_dn_tree, loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_xgbtree %>% 
+  select(-Precision, -Recall, -F1, -fpr) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+#plot PR curve
+prroc_xgbtree %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_xgbtree$Recall, prroc_xgbtree$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_xgbtree %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_xgbtree$fpr, prroc_xgbtree$Recall, method = "spline"),3)))
 
 ########
 
@@ -294,6 +424,67 @@ model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada,
                 metric = "ROC", 
                 preProc = c("center", "scale"))
 ########
+
+# PCA
+########
+library(dummies)
+
+#create a dummy data frame
+new_my_data <- dummy.data.frame(my_data, names = c("creditpolicy", "term", "grade","emp10years",
+                                                   "delin2years","homeowner", "annualinc_bin",
+                                                   "revolbal_bin","verified", "purpose_mod"))
+
+str(new_my_data)
+summary(new_my_data)
+
+# #new_my_data[1:60] <- lapply(new_my_data[1:60], as.numeric)
+#
+# str(new_my_data)
+
+#divide the new data
+
+loan_dftrainpca = new_my_data[inds,]
+loan_dftestpca = new_my_data[-inds,]
+
+summary(loan_dftrainpca)
+summary(loan_dftestpca)
+#principal component analysis
+prin_comp <- prcomp(loan_dftrainpca, scale. = T)
+names(prin_comp)
+
+prin_comp$rotation
+dim(prin_comp$x)
+
+# plot the resultant principal components.
+biplot(prin_comp, scale = 0)
+
+#compute standard deviation of each principal component
+std_dev <- prin_comp$sdev
+
+#compute variance
+pr_var <- std_dev^2
+
+#check variance of first 10 components
+pr_var[1:10]
+
+#proportion of variance explained
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:20]
+
+#scree plot
+plot(prop_varex, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     type = "b")
+
+#cumulative scree plot
+plot(cumsum(prop_varex), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     type = "b")
+
+#add a training set with principal components
+
+train.data <- data.frame(targetloanstatus = loan_dftrain$targetloanstatus, prin_comp$x)
+train.data <- train.data[,1:38]
 
 # Build a neural network model using the neuralnet package.
 ########
@@ -421,39 +612,8 @@ ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##
 plot(ROC_NNtrain, print.auc = TRUE)
 plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 
-########
 
-# Threshold determination
-########
-
-loans_pnl = read.csv("loansfortest.csv")
-tn = median((loans_pnl %>% filter(profit >0))$profit)
-fn = median((loans_pnl %>% filter(loss >0))$loss)
-fp = median(loans_pnl$potl_profit)
-
-# to determine optimum threshold point
-pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
-  thres = seq(0,1,0.01)
-  mydf = data.frame(Threshold = numeric(),
-                    Profits = numeric(),
-                    Missed_Profits = numeric(),
-                    Losses = numeric(),
-                    Combined = numeric())
-  for (i in thres) {
-    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
-    profits = cm[["table"]][1] * tn
-    lost_prof = cm[["table"]][2] * fp
-    losses = cm[["table"]][3] * fn
-    total = profits - lost_prof - losses
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total)
-  }
-  return(mydf)
-}
-
-threshold_test = pnl(pdataglm_test,loans_dftest$targetloanstatus, fp, fn, tn)
-threshold_test %>% 
-  melt(id.vars = "Threshold") %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
-  labs(title = "Combined Profits of Lending Club vs Threshold Level")
-
+#plot F1 curve
+threshold_test %>%
+  ggplot(aes(x = Threshold, y = F1)) +
+  geom_line()
