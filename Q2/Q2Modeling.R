@@ -456,3 +456,4 @@ threshold_test %>%
   ggplot(aes(x = Threshold, y = value)) +
   geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
   labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
