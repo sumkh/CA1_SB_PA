@@ -1,5 +1,6 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, PRROC, DescTools, dummies)
 
+#setwd(gygyggygy)
 setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
 #setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
 #setwd("~/WorkDirectory")
