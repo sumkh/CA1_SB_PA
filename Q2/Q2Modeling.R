@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, PRROC, DescTools, dummies)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
 
 #setwd(gygyggygy)
 setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
@@ -428,29 +428,15 @@ model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada,
 
 # PCA
 ########
-library(dummies)
+#create one hot encoding model.
+OHEmodel <- dummyVars(~ . , select(loans_df, -targetloanstatus))
+loans_dftrain_dummy = predict(OHEmodel, newdata = select(loans_df, -targetloanstatus))[inds,]
+loans_dftest_dummy = predict(OHEmodel, newdata = select(loans_df, -targetloanstatus))[-inds,]
 
-#create a dummy data frame
-new_my_data <- dummy.data.frame(my_data, names = c("creditpolicy", "term", "grade","emp10years",
-                                                   "delin2years","homeowner", "annualinc_bin",
-                                                   "revolbal_bin","verified", "purpose_mod"))
+nrow(loans_dftrain_dummy)
 
-str(new_my_data)
-summary(new_my_data)
-
-# #new_my_data[1:60] <- lapply(new_my_data[1:60], as.numeric)
-#
-# str(new_my_data)
-
-#divide the new data
-
-loan_dftrainpca = new_my_data[inds,]
-loan_dftestpca = new_my_data[-inds,]
-
-summary(loan_dftrainpca)
-summary(loan_dftestpca)
 #principal component analysis
-prin_comp <- prcomp(loan_dftrainpca, scale. = T)
+prin_comp <- prcomp(loans_dftrain_dummy, scale. = T)
 names(prin_comp)
 
 prin_comp$rotation
@@ -482,10 +468,34 @@ plot(cumsum(prop_varex), xlab = "Principal Component",
      ylab = "Cumulative Proportion of Variance Explained",
      type = "b")
 
-#add a training set with principal components
+#add a training set with principal components, we only use the first 10 as 50% of variance is explained.
 
-train.data <- data.frame(targetloanstatus = loan_dftrain$targetloanstatus, prin_comp$x)
-train.data <- train.data[,1:38]
+PCAtraindata <- data.frame(targetloanstatus = loans_dftrain$targetloanstatus, prin_comp$x[,1:30])
+PCAtestdata = data.frame(targetloanstatus = loans_dftest$targetloanstatus, predict(prin_comp, newdata = loans_dftest_dummy)[,1:30])
+
+PCAmodel_glm = glm(targetloanstatus ~.,
+                   family=binomial, data = PCAtraindata)
+pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
+
+prroc_PCAglm = pnl(pdataPCA_glm, loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_PCAglm %>% 
+  select(-Precision, -Recall, -F1, -fpr) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+#plot PR curve
+prroc_PCAglm %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_PCAglm$Recall, prroc_PCAglm$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_PCAglm %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_PCAglm$fpr, prroc_PCAglm$Recall, method = "spline"),3)))
 
 # Build a neural network model using the neuralnet package.
 ########
