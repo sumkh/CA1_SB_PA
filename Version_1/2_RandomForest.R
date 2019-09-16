@@ -146,6 +146,10 @@ pROC::roc(response = testData$targetloanstatus,
 library(ROCR)
 au = pROC::ci.auc(response = testData$targetloanstatus, 
                   predictor = model_rf_pred[, "Default"])[2]
+
+
+pred = prediction(model_rf_pred[, "Default"], testData$targetloanstatus)
+pe <- performance(pred, "tpr", "fpr")
 pd <- data.frame(fpr=unlist(pe@x.values), tpr=unlist(pe@y.values))
 
 p <- ggplot()+ geom_line(data=pd, aes(x=fpr, y=tpr), colour="red")
@@ -158,7 +162,13 @@ p <- p + annotate("text", x=0.50, y=0.00, hjust=0, vjust=0, size=4,
 print(p)
 
 
-
+# Example
+## computing a simple ROC curve (x-axis: fpr, y-axis: tpr)
+library(ROCR)
+data(ROCR.simple)
+pred <- prediction( ROCR.simple$predictions, ROCR.simple$labels)
+perf <- performance(pred,"tpr","fpr")
+plot(perf)
 
 
 

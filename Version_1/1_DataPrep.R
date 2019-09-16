@@ -137,6 +137,24 @@ table(loans$homeowner, loans$homeownership)
 # Binning annualinc
 # install.packages("dlookr")
 #library(dlookr)
+loans$annualinc_bin2 = dlookr::binning_by(loans, y="targetloanstatus", x="annualinc")
+# summary optimal_bins class
+summary(bin)
+# information value
+attr(bin, "iv")
+# information value table
+attr(bin, "ivtable")
+# visualize optimal_bins class
+plot(bin, sub = "bins of annualinc") 
+# type = c("dist", "goodrate", "badrate", "WoE")
+loans %>% 
+  group_by(annualinc_bin2) %>%
+  summarise(min(annualinc), max(annualinc))
+
+
+
+
+
 loans$annualinc_bin = dlookr::binning(loans$annualinc, nbins = 5, type = "quantile", 
                                       ordered = T, labels = paste0("Gp",seq(1:5)))
 table(loans$annualinc_bin, useNA = "always")
@@ -177,9 +195,9 @@ loans = loans%>%
                                      , "major_purchase" = "luxury", "medical" = "living_expenses", "moving" = "living_expenses",
                                      "renewable_energy" = "business", "small_business" = "business", "vacation" = "luxury", "wedding" = "living_expenses")) 
 
-unique(loans$purpose_mod)
+unique(loans$purpose)
 str(loans$purpose_mod)
-table(loans$purpose_mod)
+table(loans$purpose)
 
 # plot purpose with modified category
 loans %>%

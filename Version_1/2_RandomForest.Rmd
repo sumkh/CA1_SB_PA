@@ -1,6 +1,8 @@
 ---
-title: "2_Decision Tree: Random Forest"
-output: html_notebook
+title: '2_Decision Tree: Random Forest'
+output:
+  html_document:
+    df_print: paged
 ---
 ```{r, message=FALSE}
 
@@ -161,14 +163,23 @@ pROC::ci.auc(response = testData$targetloanstatus,
 library(ROCR)
 au = pROC::ci.auc(response = testData$targetloanstatus, 
                   predictor = model_rf_pred[, "Default"])[2]
-pd <- data.frame(fpr=unlist(pe@x.values), tpr=unlist(pe@y.values))
 
-p <- ggplot()+ geom_line(data=pd, aes(x=fpr, y=tpr), colour="red")
-p <- p + xlab("False Positive Rate") + ylab("True Positive Rate")
-p <- p + ggtitle("ROC Curve")
-p <- p + theme(plot.title=element_text(size=10))
-p <- p + geom_line(data=data.frame(), aes(x=c(0,1), y=c(0,1)), colour="grey")
-p <- p + annotate("text", x=0.50, y=0.00, hjust=0, vjust=0, size=4,
+pred = prediction(model_rf_pred[, "Default"], testData$targetloanstatus)
+pe = performance(pred, "tpr", "fpr")
+pd = data.frame(fpr=unlist(pe@x.values), tpr=unlist(pe@y.values))
+
+
+p = ggplot()+ geom_line(data=pd, aes(x=fpr, y=tpr), colour="red")
+
+p = p + xlab("False Positive Rate") + ylab("True Positive Rate")
+
+p = p + ggtitle("ROC Curve")
+
+p = p + theme(plot.title=element_text(size=10))
+
+p = p + geom_line(data=data.frame(), aes(x=c(0,1), y=c(0,1)), colour="grey")
+
+p = p + annotate("text", x=0.50, y=0.00, hjust=0, vjust=0, size=4,
                   label=paste("Random Forest AUC =", round(au, 2)))
 p
 
