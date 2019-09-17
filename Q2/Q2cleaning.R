@@ -1,17 +1,22 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr, dlookr, inspectdf)
 
-setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-#setwd("~/WorkDirectory")
+# setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+setwd("~/WorkDirectory")
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
 summary(loans_all)
 
 # data exploration
 # check if all lines are filled
-# remove data with missing values since instances of NA is not significant
+# show percentage missing entries for each variable
+colMeans(is.na(loans_all))*100
+
+# remove data with missing values since instances of NA is not significant (<5%)
 loans = loans_all[complete.cases(loans_all),]
 glimpse(loans)
 summary(loans)
+nrow(loans)/nrow(loans_all)
+# 99.8% of original entries are retained
 
 # assume that targetloanstatus defines defaults -> defaulted loans: targetloanstatus == 1
 # code dependent variable target loan status as factor and plot graph
