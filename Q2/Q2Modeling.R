@@ -134,6 +134,12 @@ vif(loans_dfglm3)
 source("glmbagging.R")
 loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
 
+# show important variables
+VarImp_glm = as.data.frame(varImp(loans_dfglm2))
+VarImp_glm =  data.frame(
+  names   = rownames(VarImp_glm), overall = VarImp_glm$Overall)
+VarImp_glm[order(VarImp_glm$overall,decreasing = T),]
+
 # Perform prediction on trainset and look at confusion matrix.
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
