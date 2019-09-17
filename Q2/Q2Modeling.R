@@ -49,10 +49,11 @@ glimpse(loans_dftrainDN)
 loans_pnl = read.csv("loansfortest.csv")
 loans_testpnl = loans_pnl[-inds,]
 
-baseprofit = (loans_pnl[-inds,] %>%
-                summarize(total = sum(profit) - sum(loss)))[1,1]
+baserevenue = (loans_testpnl %>%
+                summarize(total = sum(profit)))[1,1]
 baseloss = (loans_testpnl %>%
-  summarize(total = sum(loss)))[1,1]
+              summarize(total = sum(loss)))[1,1]
+baseprofit = baserevenue - baseloss
 
 # to determine optimum threshold point
 pnl = function(predict, reference, loans_testpnl, baseprofit, baseloss) {
@@ -135,23 +136,19 @@ source("glmbagging.R")
 loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
 
 # Perform prediction on trainset and look at confusion matrix.
-pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrain, type = "response")
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
-#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
-confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrain$targetloanstatus)
+#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 
 library(pROC)
 #roc syntax: (actual results, predicted probabilities)
-roc_glm_train = roc(as.numeric(loans_dftrain$targetloanstatus),pdataglm_train)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
 roc_glmbag_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglmbag_test)
-plot(roc_glm_train, print.auc = TRUE)
-plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
+plot(roc_glm_test, print.auc = TRUE,print.auc.y = 0.4, col = "green")
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
-legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
+legend(0.1,0.4, legend = c("Test","Test-bag"),col=c("green","red"), lty=1, cex=0.8)
 
 prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit, baseloss)
 prroc_glm %>% 
