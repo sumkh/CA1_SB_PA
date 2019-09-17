@@ -140,9 +140,10 @@ loans = loans %>%
 table(loans$delin2years, loans$delinq2yrs)
 table(loans$homeowner, loans$homeownership)
 
-# apply log to annualinc and revolbal
+# apply log transformation to annualinc and revolbal
 loans = loans %>%
-  mutate(logannualinc = log(annualinc))
+  mutate(logannualinc = log(1+annualinc),
+         logrevolbal = log(1+revolbal))
 
 # recreate ratio for openacc/totalacc
 loans = loans %>%
@@ -174,14 +175,14 @@ loans %>%
   labs(title="Purpose", x = "Purpose", y = "Number", fill = "Loan Status")
 
 # Factorise catagorical variables
-loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose_mod")] = 
+loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")] = 
   lapply(loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetloanstatus","purpose")], as.factor)
 
 #Mutate some business variables for model evaluation in the end. LC states a 5% upfront fee.
 loans = loans %>%
-  mutate(potl_profit = installment*term - loanamnt + 0.05*loanamnt,
+  mutate(potl_profit = installment*term - as.double(loanamnt),
          loss = case_when(targetloanstatus == 0 ~ 0,
-                          targetloanstatus == 1 ~ 0.95*as.double(loanamnt)),
+                          targetloanstatus == 1 ~ as.double(loanamnt)),
          profit = case_when(loss == 0 ~ potl_profit,
                             loss != 0 ~ 0))
 
@@ -192,7 +193,7 @@ loans %>%
   mutate(perc = sum/sum(sum))
 
 # Selecting Features for Modelling
-loans_df = select(loans, -c("id","homeownership","annualinc","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
+loans_df = select(loans, -c("id","homeownership","annualinc","revolbal","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
 glimpse(loans_df)
 
 loans_test = select(loans, c("profit","loss","targetloanstatus","potl_profit"))

@@ -1,9 +1,7 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
 
-#setwd(gygyggygy)
-setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-#setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
-#setwd("~/WorkDirectory")
+#set wd to this R file's current folder.
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
@@ -49,12 +47,19 @@ glimpse(loans_dftrainDN)
 ########
 
 loans_pnl = read.csv("loansfortest.csv")
-tn = median((loans_pnl %>% filter(profit >0))$profit)
-fn = median((loans_pnl %>% filter(loss >0))$loss)
-fp = median(loans_pnl$potl_profit)
+loans_testpnl = loans_pnl[-inds,]
+
+baseprofit = (loans_pnl[-inds,] %>%
+                summarize(total = sum(profit) - sum(loss)))[1,1]
+baseloss = (loans_testpnl %>%
+  summarize(total = sum(loss)))[1,1]
 
 # to determine optimum threshold point
-pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
+pnl = function(predict, reference, loans_testpnl, baseprofit, baseloss) {
+  #profits -> predict no-default correctly (true-negative)
+  #lost profits -> predict default incorrectly (false-positive)
+  #losses -> predict no-default incorrectly (false-negative)
+  
   thres = seq(0,1,0.01)
   mydf = data.frame(Threshold = numeric(),
                     Profits = numeric(),
@@ -64,18 +69,27 @@ pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
                     Precision = numeric(),
                     Recall = numeric(),
                     F1 = numeric(),
-                    fpr = numeric())
+                    fpr = numeric(),
+                    newapp = numeric(),
+                    existing = numeric())
   for (i in thres) {
     cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
-    profits = cm[["table"]][1] * tn
-    lost_prof = cm[["table"]][2] * fp
-    losses = cm[["table"]][3] * fn
+    prediction = cbind(loans_testpnl,predict = as.numeric(predict>i))
+    profits = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
+    lost_prof = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
+    losses = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
+    predictedloss = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
+    
+    predictpositivecost = (prediction %>% filter(predict == 1) %>% summarize(total = n()))[1,1] * 50
+    
     total = profits - lost_prof - losses
+    newapplicantprofit = total - baseprofit
+    pot_defaulter = baseloss - (losses + 0.9*predictedloss + predictpositivecost)
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
     fpr = 1- cm[["byClass"]][["Specificity"]]
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr)
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, newapplicantprofit, pot_defaulter)
   }
   return(mydf)
 }
@@ -139,9 +153,9 @@ plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
-prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit, baseloss)
 prroc_glm %>% 
-  select(-Precision, -Recall, -F1, -fpr) %>%
+  select(-Precision, -Recall, -F1, -fpr, -baseline) %>%
   melt(id.vars = "Threshold") %>%
   ggplot(aes(x = Threshold, y = value)) +
   geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
@@ -158,6 +172,13 @@ prroc_glm %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
+
+#plot baseline curve
+prroc_glm %>%
+  select(Threshold, newapp, existing) %>%
+  gather(key = variable, value = value, -Threshold) %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
 
 ########
 
@@ -248,7 +269,7 @@ prroc_rpart %>%
 ########
 library(randomForest)
 st = Sys.time() 
-rf_dn <- randomForest(targetloanstatus~., loans_dftrain,
+rf_dn <- randomForest(targetloanstatus~., loans_dftrainUP,
                       ntree = 400,
                       mtry = 2,
                       importance = TRUE,
@@ -257,7 +278,7 @@ rf_dn <- randomForest(targetloanstatus~., loans_dftrain,
 Sys.time()-st #11secs
 plot(rf_dn)
 st=Sys.time()
-t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
+t <- tuneRF(loans_dftrainUP[,-7], loans_dftrainUP[,7],
             stepFactor = 0.5,
             plot = TRUE,
             ntreeTry = 400,
@@ -267,32 +288,36 @@ t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
 Sys.time()-st
 
 # Perform prediction on trainset and look at confusion matrix.
-pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrain, type = "response")
+pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainUP, type = "response")
 pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
 
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
-confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrain$targetloanstatus)
+confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainUP$targetloanstatus)
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
 
-pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrain, type = "prob")
+pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainUP, type = "prob")
 pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
 
 #roc syntax: (actual results, predicted probabilities)
-roc_rf_train = roc(loans_dftrain$targetloanstatus,pdatarf_train_roc[,2])
+roc_rf_train = roc(loans_dftrainUP$targetloanstatus,pdatarf_train_roc[,2])
 roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,2])
 plot(roc_rf_train, print.auc = TRUE)
 plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
 legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
 # AUC = 0.696
 
-prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl, baseprofit)
 prroc_rf %>% 
-  select(-Precision, -Recall, -F1, -fpr) %>%
+  select(-Precision, -Recall, -F1, -fpr, -baseline) %>%
   melt(id.vars = "Threshold") %>%
   ggplot(aes(x = Threshold, y = value)) +
   geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
   labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+prroc_rf %>%
+  ggplot(aes(x = Threshold, y = baseline)) +
+  geom_line() + ylim(-500000,500000)
 
 #plot PR curve
 prroc_rf %>%
@@ -499,10 +524,6 @@ prroc_PCAglm %>%
 
 # Build a neural network model using the neuralnet package.
 ########
-# repeat loading file (for convenience) - to remove eventually
-loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
-tofactor = c("targetloanstatus","creditpolicy","term")
-loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
 
 library(neuralnet)
 
@@ -548,10 +569,7 @@ nrow(loans_dftestNN)/nrow(loans_dftestNN)
 loans_dftrainNNDN = downSample(loans_dftrainNN, y = as.factor(loans_dftrainNN$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainNNDN)
 
-# define neurel network parameter
-param_nodes_hidden_layer <- c(3,3,3,3,3,3,1) # No. of nodes at each hidden layer # did not converge
-param_max_iteration <- 5e4 # No. of iterations in training
-param_learning_rate <- 0.1 # the learniNg rate during back propagation
+# define neural network parameter
 
 # combine the attributes name for convenience.
 names <- colnames(loans_dftrainNNDN)
@@ -559,11 +577,20 @@ f <- as.formula(paste("targetloanstatus ~", paste(names[!names %in% "targetloans
 
 # train model
 
+require(nnet)
+require(caret)
+# nnmodel  <- nnet(f, data=loans_dftrainNNDN,
+#              size=2, decay=1.0e-5, maxit=50)
 st = Sys.time() 
-nnmodel <- neuralnet(f, data = loans_dftrainNNDN, hidden=param_nodes_hidden_layer, stepmax=param_max_iteration, learningrate = param_learning_rate, algorithm = "rprop+", linear.output=FALSE)  
+nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
+                 #Grid of tuning parameters to try:
+                 tuneGrid=expand.grid(.size=seq(1, 10,  by= 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
+#a 41-5-1 network with 216 weights
 
-nnmodel$result.matrix
+
+# show neural network result
+nnmodel[["finalModel"]]
 plot(nnmodel)
 
 # save model in rds format (to save time rerunning model)
@@ -575,8 +602,7 @@ nnmodel <- readRDS("neuralnetmodel.rds")
 # use confusion matrix to evaluate model performance on test data.
 
 my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
-predictNN_test <- compute(nnmodel, my_data)$net.result[,1]
-predictNN_test <- sapply(predictNN_test, round, digits=0)
+predictNN_test <- predict(nnmodel, my_data, type = "raw")
 
 # predictNN_test = factor(predictNN_test, levels = c(1,0), labels = c("Default", "No Default"))
 predictNN_test = factor(predictNN_test)
@@ -587,44 +613,76 @@ length(predictNN_test)
 head(loans_dftestNN$targetloanstatus)
 length(loans_dftestNN$targetloanstatus)
 
-#loans_dftestNN$targetloanstatus = factor(loans_dftestNN$targetloanstatus, levels = c(1,0), labels = c("Default", "No Default"))
-#loans_dftestNN$targetloanstatus = factor(loans_dftestNN$targetloanstatus)
-#head(loans_dftestNN$targetloanstatus)
 confusionMatrix(data = predictNN_test, reference = loans_dftestNN$targetloanstatus)
 
-# use confusion matrix to evaluate model performance on train data.
+# plot roc for test set
+library(pROC)
+predictNN_test_roc <- predict(nnmodel, my_data, type = "prob")
+head(predictNN_test_roc)[,1]
+length(predictNN_test_roc[,1])
+ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) 
+plot(ROC_NNtest,print.auc = TRUE, print.auc.y = 0.3, col = "red")
 
-my_data2 <- subset(loans_dftrainNNDN, select = -c(targetloanstatus))
+prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl, baseprofit)
 
-predictNN_train <- compute(nnmodel, my_data2)$net.result[,1]
-# $net,result gives one level and gives the probability of each sample to be a given category
-predictNN_train <- sapply(predictNN_train, round, digits=0)
-# predictNN = factor(predictNN, levels = c(1,0), labels = c("Default", "No Default"))
-head(predictNN_train)
-predictNN_train = factor(predictNN_train)
-length(predictNN_train)
+#plot PR curve
+prroc_nn %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_nn$Recall, prroc_nn$Precision, method = "spline"),3)))
 
-head(loans_dftrainNNDN$targetloanstatus)
-length(loans_dftrainNNDN$targetloanstatus)
+#plot ROC curve
+prroc_nn %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_nn$fpr, prroc_nn$Recall, method = "spline"),3)))
 
-loans_dftrainNNDN$targetloanstatus = factor(loans_dftrainNNDN$targetloanstatus)
-head(loans_dftrainNNDN$targetloanstatus)
-
-confusionMatrix(data = predictNN_train, reference = loans_dftrainNNDN$targetloanstatus)
-
-#roc syntax: (actual results, predicted probabilities)
-
-# plot roc for train and test set
-predictNN_test_roc <- compute(nnmodel, my_data)$net.result ## add this line
-ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) ##amend this line right at the end of our codes
-
-predictNN_train_roc <- compute(nnmodel, my_data2)$net.result ## add this line
-ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##amend this line right at the end of our codes
-plot(ROC_NNtrain, print.auc = TRUE)
-plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
-
+prroc_nn %>%
+  ggplot(aes(x = Threshold, y = baseline)) +
+  geom_line() + ylim(-500000,500000)
 
 #plot F1 curve
-threshold_test %>%
-  ggplot(aes(x = Threshold, y = F1)) +
-  geom_line()
+# threshold_test %>%
+#   ggplot(aes(x = Threshold, y = F1)) +
+#   geom_line()
+
+# Evaluation
+############
+
+#Compute Test set's money
+loans_pnl = read.csv("loansfortest.csv")
+loans_testpnl = loans_pnl[-inds,]
+
+pdataglm_test = predict(loans_dfglm3, newdata = loans_dftest, type = "response")
+#optimum threshold based on median profit/loss
+# pdataglm_test = as.numeric(pdataglm_test>0.8)
+# loans_pnlglm = cbind(loans_pnl[-inds,],pdataglm_test)
+# 
+# a = (loans_pnlglm %>% filter(pdataglm_test == 0) %>% summarize(total = sum(profit) - sum(loss)))[1,1]
+# b = (loans_pnlglm %>% filter(pdataglm_test == 1) %>% summarize(total = sum(profit)))[1,1]
+# 
+# glmearn = a-b -baseprofit
+
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit)
+prroc_glm %>% 
+  select(-Precision, -Recall, -F1, -fpr, -Combined) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level") + facet_wrap(~variable, scales = "free_y")
+
+prroc_glm %>%
+  ggplot(aes(x = Threshold, y = baseline)) +
+  geom_line() + ylim(-500000,500000)
+
+#plot PR curve
+prroc_glm %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_glm %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
