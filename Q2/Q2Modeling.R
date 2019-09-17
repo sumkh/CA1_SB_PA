@@ -1,8 +1,7 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
 
-#setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-#setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
-setwd("~/WorkDirectory")
+#set wd to this R file's current folder.
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
@@ -52,9 +51,11 @@ loans_testpnl = loans_pnl[-inds,]
 
 baseprofit = (loans_pnl[-inds,] %>%
                 summarize(total = sum(profit) - sum(loss)))[1,1]
+baseloss = (loans_testpnl %>%
+  summarize(total = sum(loss)))[1,1]
 
 # to determine optimum threshold point
-pnl = function(predict, reference, loans_testpnl, baseprofit) {
+pnl = function(predict, reference, loans_testpnl, baseprofit, baseloss) {
   #profits -> predict no-default correctly (true-negative)
   #lost profits -> predict default incorrectly (false-positive)
   #losses -> predict no-default incorrectly (false-negative)
@@ -69,20 +70,26 @@ pnl = function(predict, reference, loans_testpnl, baseprofit) {
                     Recall = numeric(),
                     F1 = numeric(),
                     fpr = numeric(),
-                    baseline = numeric())
+                    newapp = numeric(),
+                    existing = numeric())
   for (i in thres) {
     cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
     prediction = cbind(loans_testpnl,predict = as.numeric(predict>i))
     profits = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
     lost_prof = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
     losses = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
+    predictedloss = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
+    
+    predictpositivecost = (prediction %>% filter(predict == 1) %>% summarize(total = n()))[1,1] * 50
+    
     total = profits - lost_prof - losses
-    baseline = total - baseprofit
+    newapplicantprofit = total - baseprofit
+    pot_defaulter = baseloss - (losses + 0.9*predictedloss + predictpositivecost)
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
     fpr = 1- cm[["byClass"]][["Specificity"]]
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, baseline)
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, newapplicantprofit, pot_defaulter)
   }
   return(mydf)
 }
@@ -146,9 +153,9 @@ plot(roc_glm_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Train","Test","Test-bag"),col=c("black", "green","red"), lty=1, cex=0.8)
 
-prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit, baseloss)
 prroc_glm %>% 
-  select(-Precision, -Recall, -F1, -fpr) %>%
+  select(-Precision, -Recall, -F1, -fpr, -baseline) %>%
   melt(id.vars = "Threshold") %>%
   ggplot(aes(x = Threshold, y = value)) +
   geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
@@ -165,6 +172,13 @@ prroc_glm %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
+
+#plot baseline curve
+prroc_glm %>%
+  select(Threshold, newapp, existing) %>%
+  gather(key = variable, value = value, -Threshold) %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
 
 ########
 
