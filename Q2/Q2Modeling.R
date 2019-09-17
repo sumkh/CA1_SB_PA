@@ -1,7 +1,7 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
 
-setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-#setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
+#setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
+setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
 #setwd("~/WorkDirectory")
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
@@ -48,9 +48,10 @@ glimpse(loans_dftrainDN)
 ########
 
 loans_pnl = read.csv("loansfortest.csv")
-tn = median((loans_pnl %>% filter(profit >0))$profit)
-fn = median((loans_pnl %>% filter(loss >0))$loss)
-fp = median(loans_pnl$potl_profit)
+loans_testpnl = loans_pnl[-inds,]
+
+baseprofit = (loans_pnl[-inds,] %>%
+                summarize(total = sum(profit) - sum(loss)))[1,1]
 
 # to determine optimum threshold point
 pnl = function(predict, reference, loans_testpnl, baseprofit) {
@@ -254,7 +255,7 @@ prroc_rpart %>%
 ########
 library(randomForest)
 st = Sys.time() 
-rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
+rf_dn <- randomForest(targetloanstatus~., loans_dftrainUP,
                       ntree = 400,
                       mtry = 2,
                       importance = TRUE,
@@ -263,7 +264,7 @@ rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
 Sys.time()-st #11secs
 plot(rf_dn)
 st=Sys.time()
-t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
+t <- tuneRF(loans_dftrainUP[,-7], loans_dftrainUP[,7],
             stepFactor = 0.5,
             plot = TRUE,
             ntreeTry = 400,
@@ -273,19 +274,19 @@ t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
 Sys.time()-st
 
 # Perform prediction on trainset and look at confusion matrix.
-pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrain, type = "response")
+pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainUP, type = "response")
 pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
 
 #confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
 
-confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrain$targetloanstatus)
+confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainUP$targetloanstatus)
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
 
-pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrain, type = "prob")
+pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainUP, type = "prob")
 pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
 
 #roc syntax: (actual results, predicted probabilities)
-roc_rf_train = roc(loans_dftrain$targetloanstatus,pdatarf_train_roc[,2])
+roc_rf_train = roc(loans_dftrainUP$targetloanstatus,pdatarf_train_roc[,2])
 roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,2])
 plot(roc_rf_train, print.auc = TRUE)
 plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
@@ -644,9 +645,6 @@ threshold_test %>%
 #Compute Test set's money
 loans_pnl = read.csv("loansfortest.csv")
 loans_testpnl = loans_pnl[-inds,]
-
-baseprofit = (loans_pnl[-inds,] %>%
-  summarize(total = sum(profit) - sum(loss)))[1,1]
 
 pdataglm_test = predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 #optimum threshold based on median profit/loss
