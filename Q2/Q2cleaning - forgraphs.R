@@ -1,6 +1,6 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr, dlookr, inspectdf)
 
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
 summary(loans_all)
@@ -168,6 +168,15 @@ table(loans$verified, loans$verificationstatus)
 
 # Recoding purpose into 7 main categories
 # create new variable purpose_mod
+
+loans %>%
+  ggplot(aes(x=purpose)) +
+  geom_bar(fill = "green4") +
+  labs(title="Purpose", x = "Purpose", y = "Number", fill = "Loan Status") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank())
 
 loans = loans%>%
   mutate(purpose_mod = recode_factor(purpose,"home_improvement" = "living_expenses", 
