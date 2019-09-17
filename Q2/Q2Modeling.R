@@ -56,7 +56,7 @@ baseloss = (loans_testpnl %>%
 baseprofit = baserevenue - baseloss
 
 # to determine optimum threshold point
-pnl = function(predict, reference, loans_testpnl, baseprofit, baseloss) {
+pnl = function(predict, reference, loans_testpnl) {
   #profits -> predict no-default correctly (true-negative)
   #lost profits -> predict default incorrectly (false-positive)
   #losses -> predict no-default incorrectly (false-negative)
@@ -80,17 +80,16 @@ pnl = function(predict, reference, loans_testpnl, baseprofit, baseloss) {
     lost_prof = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
     losses = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
     predictedloss = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
+    total = profits - lost_prof - losses
     
     predictpositivecost = (prediction %>% filter(predict == 1) %>% summarize(total = n()))[1,1] * 50
-    
-    total = profits - lost_prof - losses
-    newapplicantprofit = total - baseprofit
-    pot_defaulter = baseloss - (losses + 0.9*predictedloss + predictpositivecost)
+
+    pot_defaulter = losses + 0.9*predictedloss + predictpositivecost
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
     fpr = 1- cm[["byClass"]][["Specificity"]]
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, newapplicantprofit, pot_defaulter)
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, total, pot_defaulter)
   }
   return(mydf)
 }
@@ -150,13 +149,7 @@ plot(roc_glm_test, print.auc = TRUE,print.auc.y = 0.4, col = "green")
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Test","Test-bag"),col=c("green","red"), lty=1, cex=0.8)
 
-prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit, baseloss)
-prroc_glm %>% 
-  select(-Precision, -Recall, -F1, -fpr, -baseline) %>%
-  melt(id.vars = "Threshold") %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
-  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl)
 
 #plot PR curve
 prroc_glm %>%
@@ -176,6 +169,9 @@ prroc_glm %>%
   gather(key = variable, value = value, -Threshold) %>%
   ggplot(aes(x = Threshold, y = value)) +
   geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+
+prroc_glm %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
+prroc_glm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 
 ########
 
@@ -239,13 +235,7 @@ pdata_tree = predict(loans_dfrpart, loans_dftest, type = "prob")
 roc_tree_test = roc(as.numeric(loans_dftest$targetloanstatus),pdata_tree[,2])
 plot(roc_tree_test, print.auc = TRUE)
 
-prroc_rpart = pnl(pdata_tree[,2], loans_dftest$targetloanstatus, fp, fn, tn)
-prroc_rpart %>% 
-  select(-Precision, -Recall, -F1, -fpr) %>%
-  melt(id.vars = "Threshold") %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
-  labs(title = "Combined Profits of Lending Club vs Threshold Level")
+prroc_rpart = pnl(pdata_tree[,2], loans_dftest$targetloanstatus, loans_testpnl)
 
 #plot PR curve
 prroc_rpart %>%
@@ -259,6 +249,15 @@ prroc_rpart %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_rpart$fpr, prroc_rpart$Recall, method = "spline"),3)))
 
+#plot baseline curve
+prroc_rpart %>%
+  select(Threshold, newapp, existing) %>%
+  gather(key = variable, value = value, -Threshold) %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+
+prroc_rpart %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
+prroc_rpart %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 
 ########
 
@@ -266,7 +265,7 @@ prroc_rpart %>%
 ########
 library(randomForest)
 st = Sys.time() 
-rf_dn <- randomForest(targetloanstatus~., loans_dftrainUP,
+rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
                       ntree = 400,
                       mtry = 2,
                       importance = TRUE,
@@ -275,7 +274,7 @@ rf_dn <- randomForest(targetloanstatus~., loans_dftrainUP,
 Sys.time()-st #11secs
 plot(rf_dn)
 st=Sys.time()
-t <- tuneRF(loans_dftrainUP[,-7], loans_dftrainUP[,7],
+t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
             stepFactor = 0.5,
             plot = TRUE,
             ntreeTry = 400,
@@ -285,37 +284,18 @@ t <- tuneRF(loans_dftrainUP[,-7], loans_dftrainUP[,7],
 Sys.time()-st
 
 # Perform prediction on trainset and look at confusion matrix.
-pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainUP, type = "response")
 pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
-
-#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
-
-confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainUP$targetloanstatus)
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
 
-pdatarf_train_roc <- predict(rf_dn, newdata = loans_dftrainUP, type = "prob")
 pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
 
 #roc syntax: (actual results, predicted probabilities)
-roc_rf_train = roc(loans_dftrainUP$targetloanstatus,pdatarf_train_roc[,2])
 roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,2])
-plot(roc_rf_train, print.auc = TRUE)
-plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green")
-legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
+plot(roc_rf_test, print.auc = TRUE, print.auc.y = 0.4, col = "green")
+legend(0,0.4, legend = c("Test"),col=c("green"), lty=1, cex=0.8)
 # AUC = 0.696
 
-prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl, baseprofit)
-prroc_rf %>% 
-  select(-Precision, -Recall, -F1, -fpr, -baseline) %>%
-  melt(id.vars = "Threshold") %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
-  labs(title = "Combined Profits of Lending Club vs Threshold Level")
-
-prroc_rf %>%
-  ggplot(aes(x = Threshold, y = baseline)) +
-  geom_line() + ylim(-500000,500000)
-
+prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl)
 #plot PR curve
 prroc_rf %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
@@ -328,6 +308,15 @@ prroc_rf %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_rf$fpr, prroc_rf$Recall, method = "spline"),3)))
 
+#plot baseline curve
+prroc_rf %>%
+  select(Threshold, newapp, existing) %>%
+  gather(key = variable, value = value, -Threshold) %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+
+prroc_rf %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
+prroc_rf %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 ########
 
 # boosting
@@ -481,16 +470,16 @@ prop_varex <- pr_var/sum(pr_var)
 prop_varex[1:20]
 
 #scree plot
-plot(prop_varex, xlab = "Principal Component",
-     ylab = "Proportion of Variance Explained",
-     type = "b")
+# plot(prop_varex, xlab = "Principal Component",
+#      ylab = "Proportion of Variance Explained",
+#      type = "b")
 
 #cumulative scree plot
 plot(cumsum(prop_varex), xlab = "Principal Component",
      ylab = "Cumulative Proportion of Variance Explained",
      type = "b")
 
-#add a training set with principal components, we only use the first 10 as 50% of variance is explained.
+#add a training set with principal components, we only use the first 30 as 50% of variance is explained.
 
 PCAtraindata <- data.frame(targetloanstatus = loans_dftrain$targetloanstatus, prin_comp$x[,1:30])
 PCAtestdata = data.frame(targetloanstatus = loans_dftest$targetloanstatus, predict(prin_comp, newdata = loans_dftest_dummy)[,1:30])
@@ -499,14 +488,7 @@ PCAmodel_glm = glm(targetloanstatus ~.,
                    family=binomial, data = PCAtraindata)
 pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
 
-prroc_PCAglm = pnl(pdataPCA_glm, loans_dftest$targetloanstatus, fp, fn, tn)
-prroc_PCAglm %>% 
-  select(-Precision, -Recall, -F1, -fpr) %>%
-  melt(id.vars = "Threshold") %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
-  labs(title = "Combined Profits of Lending Club vs Threshold Level")
-
+prroc_PCAglm = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl)
 #plot PR curve
 prroc_PCAglm %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
@@ -519,6 +501,15 @@ prroc_PCAglm %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_PCAglm$fpr, prroc_PCAglm$Recall, method = "spline"),3)))
 
+#plot baseline curve
+prroc_PCAglm %>%
+  select(Threshold, newapp, existing) %>%
+  gather(key = variable, value = value, -Threshold) %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+
+prroc_PCAglm %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
+prroc_PCAglm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 # Build a neural network model using the neuralnet package.
 ########
 
