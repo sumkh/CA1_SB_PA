@@ -1,8 +1,8 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
 
 #setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
-#setwd("~/WorkDirectory")
+#setwd("C:/Users/andy/Desktop/NUS EBAC/EBA5002 Predictive Analytics/CA")
+setwd("~/WorkDirectory")
 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
@@ -510,10 +510,6 @@ prroc_PCAglm %>%
 
 # Build a neural network model using the neuralnet package.
 ########
-# repeat loading file (for convenience) - to remove eventually
-loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
-tofactor = c("targetloanstatus","creditpolicy","term")
-loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
 
 library(neuralnet)
 
@@ -559,10 +555,7 @@ nrow(loans_dftestNN)/nrow(loans_dftestNN)
 loans_dftrainNNDN = downSample(loans_dftrainNN, y = as.factor(loans_dftrainNN$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainNNDN)
 
-# define neurel network parameter
-param_nodes_hidden_layer <- c(3,3,3,3,3,3,1) # No. of nodes at each hidden layer # did not converge
-param_max_iteration <- 5e4 # No. of iterations in training
-param_learning_rate <- 0.1 # the learniNg rate during back propagation
+# define neural network parameter
 
 # combine the attributes name for convenience.
 names <- colnames(loans_dftrainNNDN)
@@ -570,11 +563,20 @@ f <- as.formula(paste("targetloanstatus ~", paste(names[!names %in% "targetloans
 
 # train model
 
+require(nnet)
+require(caret)
+# nnmodel  <- nnet(f, data=loans_dftrainNNDN,
+#              size=2, decay=1.0e-5, maxit=50)
 st = Sys.time() 
-nnmodel <- neuralnet(f, data = loans_dftrainNNDN, hidden=param_nodes_hidden_layer, stepmax=param_max_iteration, learningrate = param_learning_rate, algorithm = "rprop+", linear.output=FALSE)  
+nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
+                 #Grid of tuning parameters to try:
+                 tuneGrid=expand.grid(.size=seq(1, 10,  by= 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
+#a 41-5-1 network with 216 weights
 
-nnmodel$result.matrix
+
+# show neural network result
+nnmodel[["finalModel"]]
 plot(nnmodel)
 
 # save model in rds format (to save time rerunning model)
@@ -586,8 +588,7 @@ nnmodel <- readRDS("neuralnetmodel.rds")
 # use confusion matrix to evaluate model performance on test data.
 
 my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
-predictNN_test <- compute(nnmodel, my_data)$net.result[,1]
-predictNN_test <- sapply(predictNN_test, round, digits=0)
+predictNN_test <- predict(nnmodel, my_data, type = "raw")
 
 # predictNN_test = factor(predictNN_test, levels = c(1,0), labels = c("Default", "No Default"))
 predictNN_test = factor(predictNN_test)
@@ -598,46 +599,38 @@ length(predictNN_test)
 head(loans_dftestNN$targetloanstatus)
 length(loans_dftestNN$targetloanstatus)
 
-#loans_dftestNN$targetloanstatus = factor(loans_dftestNN$targetloanstatus, levels = c(1,0), labels = c("Default", "No Default"))
-#loans_dftestNN$targetloanstatus = factor(loans_dftestNN$targetloanstatus)
-#head(loans_dftestNN$targetloanstatus)
 confusionMatrix(data = predictNN_test, reference = loans_dftestNN$targetloanstatus)
 
-# use confusion matrix to evaluate model performance on train data.
+# plot roc for test set
+library(pROC)
+predictNN_test_roc <- predict(nnmodel, my_data, type = "prob")
+head(predictNN_test_roc)[,1]
+length(predictNN_test_roc[,1])
+ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) 
+plot(ROC_NNtest,print.auc = TRUE, print.auc.y = 0.3, col = "red")
 
-my_data2 <- subset(loans_dftrainNNDN, select = -c(targetloanstatus))
+prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl, baseprofit)
 
-predictNN_train <- compute(nnmodel, my_data2)$net.result[,1]
-# $net,result gives one level and gives the probability of each sample to be a given category
-predictNN_train <- sapply(predictNN_train, round, digits=0)
-# predictNN = factor(predictNN, levels = c(1,0), labels = c("Default", "No Default"))
-head(predictNN_train)
-predictNN_train = factor(predictNN_train)
-length(predictNN_train)
+#plot PR curve
+prroc_nn %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_nn$Recall, prroc_nn$Precision, method = "spline"),3)))
 
-head(loans_dftrainNNDN$targetloanstatus)
-length(loans_dftrainNNDN$targetloanstatus)
+#plot ROC curve
+prroc_nn %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_nn$fpr, prroc_nn$Recall, method = "spline"),3)))
 
-loans_dftrainNNDN$targetloanstatus = factor(loans_dftrainNNDN$targetloanstatus)
-head(loans_dftrainNNDN$targetloanstatus)
-
-confusionMatrix(data = predictNN_train, reference = loans_dftrainNNDN$targetloanstatus)
-
-#roc syntax: (actual results, predicted probabilities)
-
-# plot roc for train and test set
-predictNN_test_roc <- compute(nnmodel, my_data)$net.result ## add this line
-ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) ##amend this line right at the end of our codes
-
-predictNN_train_roc <- compute(nnmodel, my_data2)$net.result ## add this line
-ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##amend this line right at the end of our codes
-plot(ROC_NNtrain, print.auc = TRUE)
-plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
+prroc_nn %>%
+  ggplot(aes(x = Threshold, y = baseline)) +
+  geom_line() + ylim(-500000,500000)
 
 #plot F1 curve
-threshold_test %>%
-  ggplot(aes(x = Threshold, y = F1)) +
-  geom_line()
+# threshold_test %>%
+#   ggplot(aes(x = Threshold, y = F1)) +
+#   geom_line()
 
 # Evaluation
 ############
