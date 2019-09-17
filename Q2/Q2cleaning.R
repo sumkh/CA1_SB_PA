@@ -179,9 +179,9 @@ loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetl
 
 #Mutate some business variables for model evaluation in the end. LC states a 5% upfront fee.
 loans = loans %>%
-  mutate(potl_profit = installment*term - loanamnt + 0.05*loanamnt,
+  mutate(potl_profit = installment*term - as.double(loanamnt),
          loss = case_when(targetloanstatus == 0 ~ 0,
-                          targetloanstatus == 1 ~ 0.95*as.double(loanamnt)),
+                          targetloanstatus == 1 ~ as.double(loanamnt)),
          profit = case_when(loss == 0 ~ potl_profit,
                             loss != 0 ~ 0))
 

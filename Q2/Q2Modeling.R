@@ -53,7 +53,11 @@ fn = median((loans_pnl %>% filter(loss >0))$loss)
 fp = median(loans_pnl$potl_profit)
 
 # to determine optimum threshold point
-pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
+pnl = function(predict, reference, loans_testpnl, baseprofit) {
+  #profits -> predict no-default correctly (true-negative)
+  #lost profits -> predict default incorrectly (false-positive)
+  #losses -> predict no-default incorrectly (false-negative)
+  
   thres = seq(0,1,0.01)
   mydf = data.frame(Threshold = numeric(),
                     Profits = numeric(),
@@ -63,18 +67,21 @@ pnl = function(predict, reference, fp = 500, fn = 1000, tn = 1000) {
                     Precision = numeric(),
                     Recall = numeric(),
                     F1 = numeric(),
-                    fpr = numeric())
+                    fpr = numeric(),
+                    baseline = numeric())
   for (i in thres) {
     cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
-    profits = cm[["table"]][1] * tn
-    lost_prof = cm[["table"]][2] * fp
-    losses = cm[["table"]][3] * fn
+    prediction = cbind(loans_testpnl,predict = as.numeric(predict>i))
+    profits = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
+    lost_prof = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
+    losses = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
     total = profits - lost_prof - losses
+    baseline = total - baseprofit
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
     fpr = 1- cm[["byClass"]][["Specificity"]]
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr)
+    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, baseline)
   }
   return(mydf)
 }
@@ -247,7 +254,7 @@ prroc_rpart %>%
 ########
 library(randomForest)
 st = Sys.time() 
-rf_dn <- randomForest(targetloanstatus~., loans_dftrain,
+rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
                       ntree = 400,
                       mtry = 2,
                       importance = TRUE,
@@ -285,13 +292,17 @@ plot(roc_rf_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.4, col = "green"
 legend(0,0.4, legend = c("Train","Test"),col=c("black", "green"), lty=1, cex=0.8)
 # AUC = 0.696
 
-prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, fp, fn, tn)
+prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl, baseprofit)
 prroc_rf %>% 
-  select(-Precision, -Recall, -F1, -fpr) %>%
+  select(-Precision, -Recall, -F1, -fpr, -baseline) %>%
   melt(id.vars = "Threshold") %>%
   ggplot(aes(x = Threshold, y = value)) +
   geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
   labs(title = "Combined Profits of Lending Club vs Threshold Level")
+
+prroc_rf %>%
+  ggplot(aes(x = Threshold, y = baseline)) +
+  geom_line() + ylim(-500000,500000)
 
 #plot PR curve
 prroc_rf %>%
@@ -622,8 +633,51 @@ ROC_NNtrain = roc(loans_dftrainNNDN$targetloanstatus,predictNN_train_roc[,1]) ##
 plot(ROC_NNtrain, print.auc = TRUE)
 plot(ROC_NNtest, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 
-
 #plot F1 curve
 threshold_test %>%
   ggplot(aes(x = Threshold, y = F1)) +
   geom_line()
+
+# Evaluation
+############
+
+#Compute Test set's money
+loans_pnl = read.csv("loansfortest.csv")
+loans_testpnl = loans_pnl[-inds,]
+
+baseprofit = (loans_pnl[-inds,] %>%
+  summarize(total = sum(profit) - sum(loss)))[1,1]
+
+pdataglm_test = predict(loans_dfglm3, newdata = loans_dftest, type = "response")
+#optimum threshold based on median profit/loss
+# pdataglm_test = as.numeric(pdataglm_test>0.8)
+# loans_pnlglm = cbind(loans_pnl[-inds,],pdataglm_test)
+# 
+# a = (loans_pnlglm %>% filter(pdataglm_test == 0) %>% summarize(total = sum(profit) - sum(loss)))[1,1]
+# b = (loans_pnlglm %>% filter(pdataglm_test == 1) %>% summarize(total = sum(profit)))[1,1]
+# 
+# glmearn = a-b -baseprofit
+
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit)
+prroc_glm %>% 
+  select(-Precision, -Recall, -F1, -fpr, -Combined) %>%
+  melt(id.vars = "Threshold") %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
+  labs(title = "Combined Profits of Lending Club vs Threshold Level") + facet_wrap(~variable, scales = "free_y")
+
+prroc_glm %>%
+  ggplot(aes(x = Threshold, y = baseline)) +
+  geom_line() + ylim(-500000,500000)
+
+#plot PR curve
+prroc_glm %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
+
+#plot ROC curve
+prroc_glm %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
