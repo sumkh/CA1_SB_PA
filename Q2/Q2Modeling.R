@@ -517,43 +517,32 @@ library(neuralnet)
 
 # Build the model.
 
-summary(loans_df)
+summary(loans_dftrain)
 
-# data preparation
-tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_df, select = creditpolicy))
-tempdata2 <- model.matrix(~term-1, subset(loans_df, select = term))
-tempdata3 <- model.matrix(~grade-1, subset(loans_df, select = grade))
-tempdata4 <- model.matrix(~delin2years-1, subset(loans_df, select = delin2years))
-tempdata5 <- model.matrix(~homeowner-1, subset(loans_df, select = homeowner))
-tempdata6 <- model.matrix(~verified-1, subset(loans_df, select = verified))
-tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_df, select = purpose_mod))
+# data preparation for train dataset
+tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftrain, select = creditpolicy))
+tempdata2 <- model.matrix(~term-1, subset(loans_dftrain, select = term))
+tempdata3 <- model.matrix(~grade-1, subset(loans_dftrain, select = grade))
+tempdata4 <- model.matrix(~delin2years-1, subset(loans_dftrain, select = delin2years))
+tempdata5 <- model.matrix(~homeowner-1, subset(loans_dftrain, select = homeowner))
+tempdata6 <- model.matrix(~verified-1, subset(loans_dftrain, select = verified))
+tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose_mod))
 
-loans_dfNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                         tempdata7, subset(loans_df, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,revolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+loans_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
+                              tempdata7, subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,revolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
-loans_df$loanamnt <- scale(loans_df$loanamnt)
-loans_df$intrate <- scale(loans_df$intrate)
-loans_df$emplength <- scale(loans_df$emplength)
-loans_df$dti <- scale(loans_df$dti)
-loans_df$inqlast6mths <- scale(loans_df$inqlast6mths)
-loans_df$revolbal <- scale(loans_df$revolbal)
-loans_df$revolutil <- scale(loans_df$revolutil)
-loans_df$totalacc<- scale(loans_df$totalacc)
-loans_df$logannualinc<- scale(loans_df$logannualinc)
-loans_df$ratioacc<- scale(loans_df$ratioacc)
+loans_dftrain$loanamnt <- scale(loans_dftrain$loanamnt)
+loans_dftrain$intrate <- scale(loans_dftrain$intrate)
+loans_dftrain$emplength <- scale(loans_dftrain$emplength)
+loans_dftrain$dti <- scale(loans_dftrain$dti)
+loans_dftrain$inqlast6mths <- scale(loans_dftrain$inqlast6mths)
+loans_dftrain$revolbal <- scale(loans_dftrain$revolbal)
+loans_dftrain$revolutil <- scale(loans_dftrain$revolutil)
+loans_dftrain$totalacc<- scale(loans_dftrain$totalacc)
+loans_dftrain$logannualinc<- scale(loans_dftrain$logannualinc)
+loans_dftrain$ratioacc<- scale(loans_dftrain$ratioacc)
 
-# split into train and test set
-# collect the data indices returned in a list
-inds = createDataPartition(1:nrow(loans_df), p=0.7, list=FALSE,times=1)
-
-loans_dftrainNN = loans_dfNN[inds,]
-nrow(loans_dftrainNN)/nrow(loans_dftrainNN)
-dim(loans_dftrainNN)
-
-loans_dftestNN = loans_dfNN[-inds,]
-nrow(loans_dftestNN)/nrow(loans_dftestNN)
-
-# use caret to downsample the train dataset
+# # use caret to downsample the train dataset
 loans_dftrainNNDN = downSample(loans_dftrainNN, y = as.factor(loans_dftrainNN$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainNNDN)
 
@@ -572,7 +561,7 @@ require(caret)
 st = Sys.time() 
 nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
-                 tuneGrid=expand.grid(.size=seq(1, 10,  by= 2),.decay=c(0,0.001,0.1))) 
+                 tuneGrid=expand.grid(.size=seq(1, 10, by = 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
 #a 41-5-1 network with 216 weights
 
@@ -588,6 +577,29 @@ saveRDS(nnmodel, file = "neuralnetmodel.rds")
 nnmodel <- readRDS("neuralnetmodel.rds") 
 
 # use confusion matrix to evaluate model performance on test data.
+
+# data preparation
+tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftest, select = creditpolicy))
+tempdata2 <- model.matrix(~term-1, subset(loans_dftest, select = term))
+tempdata3 <- model.matrix(~grade-1, subset(loans_dftest, select = grade))
+tempdata4 <- model.matrix(~delin2years-1, subset(loans_dftest, select = delin2years))
+tempdata5 <- model.matrix(~homeowner-1, subset(loans_dftest, select = homeowner))
+tempdata6 <- model.matrix(~verified-1, subset(loans_dftest, select = verified))
+tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_dftest, select = purpose_mod))
+
+loans_dftestNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
+                             tempdata7, subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,revolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+
+loans_dftest$loanamnt <- scale(loans_dftest$loanamnt)
+loans_dftest$intrate <- scale(loans_dftest$intrate)
+loans_dftest$emplength <- scale(loans_dftest$emplength)
+loans_dftest$dti <- scale(loans_dftest$dti)
+loans_dftest$inqlast6mths <- scale(loans_dftest$inqlast6mths)
+loans_dftest$revolbal <- scale(loans_dftest$revolbal)
+loans_dftest$revolutil <- scale(loans_dftest$revolutil)
+loans_dftest$totalacc<- scale(loans_dftest$totalacc)
+loans_dftest$logannualinc<- scale(loans_dftest$logannualinc)
+loans_dftest$ratioacc<- scale(loans_dftest$ratioacc)
 
 my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
 predictNN_test <- predict(nnmodel, my_data, type = "raw")
@@ -628,11 +640,6 @@ prroc_nn %>%
 prroc_nn %>%
   ggplot(aes(x = Threshold, y = baseline)) +
   geom_line() + ylim(-500000,500000)
-
-#plot F1 curve
-# threshold_test %>%
-#   ggplot(aes(x = Threshold, y = F1)) +
-#   geom_line()
 
 # Evaluation
 ############
