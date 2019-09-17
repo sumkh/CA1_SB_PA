@@ -3,6 +3,7 @@ pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTool
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
+
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
 loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
@@ -123,9 +124,9 @@ formula # check current formula after step function.
 detach(loans_dfglm2)
 # using anova to check remaining variables.
 anova(loans_dfglm2, test="Chisq")
-#identifies revolbal and emplength as insignificant variables.
+#identifies emplength as insignificant variables.
 
-loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . -revolbal - emplength),
+loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . - emplength),
                     family=binomial,  data=loans_dftrain)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
@@ -535,14 +536,14 @@ tempdata6 <- model.matrix(~verified-1, subset(loans_dftrain, select = verified))
 tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose_mod))
 
 loans_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                              tempdata7, subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,revolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+                              tempdata7, subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
 loans_dftrain$loanamnt <- scale(loans_dftrain$loanamnt)
 loans_dftrain$intrate <- scale(loans_dftrain$intrate)
 loans_dftrain$emplength <- scale(loans_dftrain$emplength)
 loans_dftrain$dti <- scale(loans_dftrain$dti)
 loans_dftrain$inqlast6mths <- scale(loans_dftrain$inqlast6mths)
-loans_dftrain$revolbal <- scale(loans_dftrain$revolbal)
+loans_dftrain$revolbal <- scale(loans_dftrain$logrevolbal)
 loans_dftrain$revolutil <- scale(loans_dftrain$revolutil)
 loans_dftrain$totalacc<- scale(loans_dftrain$totalacc)
 loans_dftrain$logannualinc<- scale(loans_dftrain$logannualinc)
@@ -569,7 +570,7 @@ nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
                  tuneGrid=expand.grid(.size=seq(1, 10, by = 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
-#a 41-5-1 network with 216 weights
+#a 34-7-1 network with 253 weights
 
 
 # show neural network result
@@ -594,14 +595,14 @@ tempdata6 <- model.matrix(~verified-1, subset(loans_dftest, select = verified))
 tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_dftest, select = purpose_mod))
 
 loans_dftestNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                             tempdata7, subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,revolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+                             tempdata7, subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
 loans_dftest$loanamnt <- scale(loans_dftest$loanamnt)
 loans_dftest$intrate <- scale(loans_dftest$intrate)
 loans_dftest$emplength <- scale(loans_dftest$emplength)
 loans_dftest$dti <- scale(loans_dftest$dti)
 loans_dftest$inqlast6mths <- scale(loans_dftest$inqlast6mths)
-loans_dftest$revolbal <- scale(loans_dftest$revolbal)
+loans_dftest$revolbal <- scale(loans_dftest$logrevolbal)
 loans_dftest$revolutil <- scale(loans_dftest$revolutil)
 loans_dftest$totalacc<- scale(loans_dftest$totalacc)
 loans_dftest$logannualinc<- scale(loans_dftest$logannualinc)
@@ -629,8 +630,8 @@ length(predictNN_test_roc[,1])
 ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) 
 plot(ROC_NNtest,print.auc = TRUE, print.auc.y = 0.3, col = "red")
 
-prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl, baseprofit)
-
+#prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl, baseprofit)
+prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl)
 #plot PR curve
 prroc_nn %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
@@ -644,8 +645,17 @@ prroc_nn %>%
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_nn$fpr, prroc_nn$Recall, method = "spline"),3)))
 
 prroc_nn %>%
-  ggplot(aes(x = Threshold, y = baseline)) +
-  geom_line() + ylim(-500000,500000)
+  select(Threshold, newapp, existing) %>%
+  gather(key = variable, value = value, -Threshold) %>%
+  ggplot(aes(x = Threshold, y = value)) +
+  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+
+prroc_nn %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
+prroc_nn %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
+
+# prroc_nn %>%
+#   ggplot(aes(x = Threshold, y = baseline)) +
+#   geom_line() + ylim(-500000,500000)
 
 # Evaluation
 ############
