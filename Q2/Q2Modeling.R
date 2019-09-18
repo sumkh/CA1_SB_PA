@@ -44,7 +44,7 @@ loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetlo
 glimpse(loans_dftrainDN)
 ########
 
-# Create evaluation Metric
+# Create evaluation Metrics
 ########
 
 loans_pnl = read.csv("loansfortest.csv")
@@ -92,6 +92,24 @@ plotlift = function(predict, reference) {
   return(mydf)
 }
 
+plotprofit = function(predict, loans_testpnl) {
+  caseload = seq(0.01,1,0.01)
+  a = data.frame(prob = predict, select(loans_testpnl,-targetloanstatus))
+  mydf = data.frame(caseload = numeric(),
+                    profits = numeric())
+  for (i in caseload) {
+    profits = (a %>% top_n(-i*nrow(a), wt = prob) %>% summarise(total = sum(profit) - sum(loss)))[1,1]
+    mydf[nrow(mydf) + 1,] = list(i, profits)
+  }
+  return(mydf)
+}
+set.seed(2019)
+baseprofit = plotprofit(runif(nrow(loans_dftest),0.01,1), loans_testpnl)
+
+cbind(glm = a, random = baseprofit) %>%
+  ggplot(aes(x = glm.caseload, y = profits)) + 
+  geom_line(aes(y = glm.profits), color = "red") +
+  geom_line(aes(y = random.profits), color = "green")
 ###################
 
 # DEVELOP MODEL

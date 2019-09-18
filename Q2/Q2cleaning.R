@@ -203,7 +203,7 @@ loans %>%
 loans_df = select(loans, -c("id","homeownership","annualinc","revolbal","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
 glimpse(loans_df)
 
-loans_test = select(loans, c("profit","loss","targetloanstatus","potl_profit"))
+loans_test = select(loans, c("profit","loss","targetloanstatus"))
 glimpse(loans_test)
 
 # Visualisation of Correlation of Numerical Variables
