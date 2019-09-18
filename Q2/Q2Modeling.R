@@ -3,19 +3,18 @@ pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTool
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-
+# read csv file (to remove after merging file)
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
 loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
 
-# Modelling
 # Sampling
 ##########
 #Create our training set using stratified sampling.
 #set initial seed for reproducibility
 set.seed(123)
 
-# collect the data indices returned in a list
+# partition dataset into training and test dataset in ratio 70:30
 inds = createDataPartition(1:nrow(loans_df), p=0.7, list=FALSE,times=1)
 
 loans_dftrain = loans_df[inds,]
@@ -24,6 +23,7 @@ dim(loans_dftrain)
 
 loans_dftest = loans_df[-inds,]
 nrow(loans_dftest)/nrow(loans_df)
+dim(loans_dftest)
 
 #some exploration
 loans_dftrain %>%
@@ -44,7 +44,7 @@ loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetlo
 glimpse(loans_dftrainDN)
 ########
 
-# Evaluation Metric
+# Create evaluation Metric
 ########
 
 loans_pnl = read.csv("loansfortest.csv")
@@ -104,18 +104,23 @@ pnl = function(predict, reference, loans_testpnl) {
 loans_dfglm <- glm(formula = targetloanstatus ~ .,
                    family=binomial,  data=loans_dftrain)
 summary(loans_dfglm)
+
+# check for multi-collinearity
 vif(loans_dfglm)
-# vif >10  for intrate and grade. Remove grade from domain knowledge.
+# vif >10  for intrate indicating presence of multi-collinearity (grade is a categorical variable and vif is not applicable).  
+# from earlier box plot, we observed a relationship between intrate and grade. we remove grade from the model and rerun the model
 
 loans_dfglm <- glm(formula = update.formula(loans_dfglm, ~ . -grade),
                    family=binomial,  data=loans_dftrain)
 summary(loans_dfglm)
 vif(loans_dfglm)
+# vif < 3 for all variables
 
-# try using step function, step function tries to optimize a lm/glm model by automatically add/dropping relevant indep variables.
+# Refine model/Use step function, step function tries to optimize a glm model by automatically adding/dropping relevant independent variables.
 loans_dfglm2 = step(loans_dfglm, trace = F)
 summary(loans_dfglm2)
 vif(loans_dfglm2)
+# vif < 3 for all variables
 
 attach(loans_dfglm2)
 pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)
@@ -124,32 +129,53 @@ formula # check current formula after step function.
 detach(loans_dfglm2)
 # using anova to check remaining variables.
 anova(loans_dfglm2, test="Chisq")
-#identifies emplength as insignificant variables.
+#identifies emplength as insignificant variables.retrain model by removing emplength 
 
 loans_dfglm3 <- glm(formula = update.formula(loans_dfglm2, ~ . - emplength),
                     family=binomial,  data=loans_dftrain)
 summary(loans_dfglm3)
 vif(loans_dfglm3)
+# vif < 3 for all variables
 
-#Try bagging glm model.
+# test model on trainset and check accuracy with confusion matrix.
+pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrain, type = "response")
+
+#confusionmatrix (syntax: predicted result, actual results)
+confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrain$targetloanstatus)
+# accuracy of trainset is 84.8%
+
+# show variable importance
+VarImp_glm = as.data.frame(varImp(loans_dfglm3))
+VarImp_glm =  data.frame(
+  names   = rownames(VarImp_glm), overall = VarImp_glm$Overall)
+VarImp_glm$names <- factor(VarImp_glm$names, levels = VarImp_glm$names[order(VarImp_glm$overall)])
+
+VarImp_glm %>% 
+  ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
+
+# Perform prediction on testset and look at confusion matrix.
+pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
+
+# confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
+confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
+# accuracy of test set is 84.9% which is comparable to our training set
+
+# Try bagging glm model.
 source("glmbagging.R")
 loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
 
-# show important variables
-VarImp_glm = as.data.frame(varImp(loans_dfglm2))
-VarImp_glm =  data.frame(
-  names   = rownames(VarImp_glm), overall = VarImp_glm$Overall)
-VarImp_glm[order(VarImp_glm$overall,decreasing = T),]
+# test model on trainset and check accuracy with confusion matrix.
+pdataglmbag_train = predictbag(loans_dfglmbag,loans_dftest, method = "max")
+confusionMatrix(data = as.factor(as.numeric(pdataglmbag_train>0.5)), reference = loans_dftest$targetloanstatus)
+# Accuracy on test set is 84.9%
 
-# Perform prediction on trainset and look at confusion matrix.
-pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
+# Perform prediction on testset and look at confusion matrix.
 pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
-
-#confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
-confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus)
+# Accuracy on test set is 84.9%
 
 library(pROC)
-#roc syntax: (actual results, predicted probabilities)
+# roc syntax: (actual results, predicted probabilities)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
 roc_glmbag_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglmbag_test)
 plot(roc_glm_test, print.auc = TRUE,print.auc.y = 0.4, col = "green")
@@ -158,19 +184,19 @@ legend(0.1,0.4, legend = c("Test","Test-bag"),col=c("green","red"), lty=1, cex=0
 
 prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl)
 
-#plot PR curve
+# plot PR curve
 prroc_glm %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
 
-#plot ROC curve
+# plot ROC curve
 prroc_glm %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
 
-#plot baseline curve
+# plot baseline curve
 prroc_glm %>%
   select(Threshold, newapp, existing) %>%
   gather(key = variable, value = value, -Threshold) %>%
@@ -187,13 +213,13 @@ prroc_glm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 library(rpart)
 library(rattle)
 
-#unbalanced dataset
+# model using unbalanced dataset
 loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
                        data=loans_dftrain,
                        method = "class",
                        parms=list(split="information"),
-                       control= rpart.control(minsplit=5,
-                                              minbucket=2,
+                       control= rpart.control(minsplit=20,
+                                              minbucket=7,
                                               usesurrogate=0, 
                                               maxsurrogate=0),
                        model=TRUE)
@@ -203,14 +229,15 @@ loans_dfrpart
 rattle::fancyRpartPlot(loans_dfrpart)
 summary(loans_dfrpart)
 
-#rpart does not see good information gain on the unbalanced data set. For a good decision tree model, balancing of data is required.
-
+# rpart does not give good information gain on the unbalanced data set. 
+# Try balancing the data before modelling.
+# Perform modelling on downsampled dataset
 loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
                        data=loans_dftrainDN,
                        method = "class",
                        parms=list(split="information"),
-                       control= rpart.control(minsplit=5,
-                                              minbucket=2,
+                       control= rpart.control(minsplit=20,
+                                              minbucket=7,
                                               usesurrogate=0, 
                                               maxsurrogate=0),
                        model=TRUE)
@@ -218,13 +245,13 @@ loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
 rattle::fancyRpartPlot(loans_dfrpart)
 summary(loans_dfrpart)
 
-#grade is the only selection factor?? rerun without grade.
+# Grade is the only selection factor. Try rerun model without using variable, grade.
 loans_dfrpart <- rpart(formula = update.formula(loans_dfrpart, ~ . -grade),
                        data=loans_dftrainDN,
                        method = "class",
                        parms=list(split="information"),
-                       control= rpart.control(minsplit=5,
-                                              minbucket=2,
+                       control= rpart.control(minsplit=20,
+                                              minbucket=7,
                                               usesurrogate=0, 
                                               maxsurrogate=0),
                        model=TRUE)
@@ -234,10 +261,17 @@ summary(loans_dfrpart)
 #see variable importance
 loans_dfrpart[["variable.importance"]]
 
+# test model on trainset and check accuracy with confusion matrix.
+pdata_traintree = predict(loans_dfrpart, loans_dftrainDN, type = "class")
+confusionMatrix(pdata_traintree, reference = loans_dftrainDN$targetloanstatus)
+# accuracy of trainset is 62.6%
+
+# Perform prediction on testset and look at confusion matrix.
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "class")
 confusionMatrix(pdata_tree, reference = loans_dftest$targetloanstatus)
-#get probabilities for ROC curve
+# accuracy of trainset is 61.8% which is comparable to our training set
 
+# get probabilities for ROC curve
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "prob")
 roc_tree_test = roc(as.numeric(loans_dftest$targetloanstatus),pdata_tree[,2])
 plot(roc_tree_test, print.auc = TRUE)
@@ -290,17 +324,22 @@ t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
 # mtry 2 has optimum 
 Sys.time()-st
 
-# Perform prediction on trainset and look at confusion matrix.
+# Test model on trainset and check accuracy with confusion matrix.
+pdatarf_train_cm <- predict(rf_dn, newdata = loans_dftrainDN, type = "response")
+confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainDN$targetloanstatus)
+# accuracy of training set is 99.9%
+
+# Perform prediction on testset and look at confusion matrix.
 pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
+# accuracy of test set is 65.0%
 
-pdatarf_test_roc <- predict(rf_dn, newdata = loans_dftest, type = "prob")
-
-#roc syntax: (actual results, predicted probabilities)
+# Get probabilities for ROC curve
+pdatarf_test_roc = predict(rf_dn, newdata = loans_dftest, type = "prob")
 roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,2])
 plot(roc_rf_test, print.auc = TRUE, print.auc.y = 0.4, col = "green")
 legend(0,0.4, legend = c("Test"),col=c("green"), lty=1, cex=0.8)
-# AUC = 0.696
+# AUC = 0.698
 
 prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl)
 #plot PR curve
@@ -326,11 +365,9 @@ prroc_rf %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
 prroc_rf %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 ########
 
-# boosting
+# Boosting
 ########
 
-# boosting
-########
 library(xgboost)
 train_x = data.matrix(loans_dftrainDN[,-7])
 train_y = loans_dftrainDN[,7]
@@ -350,7 +387,7 @@ params_linear = list(booster = "gblinear",
                      feature_selector = "cyclic", lambda = 0, alpha = 0,
                      objective = "binary:logistic")
 
-#try xgboost cross validation
+# try xgboost cross validation
 xgbcv_tree = xgb.cv(data = xgb_train, 
                     params = params_tree, nrounds = 100, nfold = 5, 
                     showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
@@ -359,9 +396,13 @@ xgbcv_linear = xgb.cv(data = xgb_train,
                       params = params_linear, nrounds = 100, nfold = 5, 
                       showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
 
+# identify iteration with lowest error for xgb tree
 which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]]))
+which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]]))
+
+# identify iteration with lowest error for xgb linear
 which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]]))
-#8th iteration gives lowest test_error_mean
+which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]]))
 
 xgbc_tree <- xgb.train(data = xgb_train, 
                        params = params_tree, nfold = 5, nrounds = which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]])), 
@@ -371,7 +412,15 @@ mat_tree = xgb.importance(model=xgbc_tree)
 
 xgb.plot.importance(importance_matrix = mat_tree[1:20]) 
 
+# test on trainset and check confusion matrix
+x2_dn_traintree = predict(xgbc_tree, xgb_train, type="prob")
+confusionMatrix(data = as.factor(as.numeric(x2_dn_traintree>0.5)), reference = loans_dftrainDN$targetloanstatus)
+# accuracy = 92.1% for training set
+
+# Perform prediction on testset and look at confusion matrix.
 x2_dn_tree = predict(xgbc_tree, xgb_test, type="prob")
+confusionMatrix(data = as.factor(as.numeric(x2_dn_tree>0.5)), reference = loans_dftest$targetloanstatus)
+# accuracy = 61.8% for test set
 
 prroc_xgbtree = pnl(x2_dn_tree, loans_dftest$targetloanstatus, loans_testpnl)
 
@@ -405,8 +454,15 @@ xgbc_linear <- xgb.train(data = xgb_train,
                          params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]])), 
                          verbose = FALSE, eval_metric = 'auc')
 
-x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
+# test on trainset and check confusion matrix
+x2_dn_trainlinear = predict(xgbc_linear, xgb_train, type="prob")
+confusionMatrix(data = as.factor(as.numeric(x2_dn_trainlinear>0.5)), reference = loans_dftrainDN$targetloanstatus)
+# accuracy = 62.8% for training set
 
+# Perform prediction on testset and look at confusion matrix.
+x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
+confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loans_dftest$targetloanstatus)
+# accuracy = 65.6% for test set
 
 mat_linear = xgb.importance(model=xgbc_linear)
 xgb.plot.importance(importance_matrix = mat_linear[1:20])
@@ -435,36 +491,6 @@ prroc_xgblinear %>%
 prroc_xgblinear %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
 prroc_xgblinear %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 
-########
-
-# Adaboost
-########
-# Build an adaboost model.
-library(adabag)
-library(plyr)
-library(dplyr)
-#grid is the tuning parameters
-
-loan_dftrainDNada = loan_dftrainDN  %>% 
-  mutate(targetloanstatus = factor(targetloanstatus, 
-                                   labels = make.names(levels(targetloanstatus))))
-
-grid <- expand.grid(mfinal = (1:3)*3, maxdepth = c(1, 3),
-                    coeflearn = c("Breiman", "Freund", "Zhu"))
-seeds <- vector(mode = "list", length = nrow(loan_dftrainDN) + 1)
-seeds <- lapply(seeds, function(x) 1:20)
-#train control is the kfolds resampling methods.
-cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
-                       classProbs = TRUE, 
-                       summaryFunction = twoClassSummary, 
-                       seeds = seeds)
-
-model3 <- train(targetloanstatus ~ ., data = loan_dftrainDNada, 
-                method = "AdaBoost.M1",
-                tuneGrid = grid, 
-                trControl = cctrl1,
-                metric = "ROC", 
-                preProc = c("center", "scale"))
 ########
 
 # PCA
@@ -511,12 +537,21 @@ plot(cumsum(prop_varex), xlab = "Principal Component",
 
 #add a training set with principal components, we only use the first 30 as 50% of variance is explained.
 
-PCAtraindata <- data.frame(targetloanstatus = loans_dftrain$targetloanstatus, prin_comp$x[,1:30])
+PCAtraindata = data.frame(targetloanstatus = loans_dftrain$targetloanstatus, prin_comp$x[,1:30])
 PCAtestdata = data.frame(targetloanstatus = loans_dftest$targetloanstatus, predict(prin_comp, newdata = loans_dftest_dummy)[,1:30])
 
 PCAmodel_glm = glm(targetloanstatus ~.,
                    family=binomial, data = PCAtraindata)
+
+# test on training set
+pdataPCA_trainglm = predict(PCAmodel_glm, newdata = PCAtraindata, type = "response")
+confusionMatrix(data = as.factor(as.numeric(pdataPCA_trainglm>0.5)), reference = loans_dftrain$targetloanstatus)
+# accuracy of 84.8% for training set
+
+# Perform prediction on testset and look at confusion matrix.
 pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
+confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loans_dftest$targetloanstatus)
+# accuracy of 84.9% for test set which is comparable to accuracy for training set
 
 prroc_PCAglm = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl)
 #plot PR curve
@@ -595,7 +630,6 @@ nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
 Sys.time() - st
 #a 34-7-1 network with 253 weights
 
-
 # show neural network result
 nnmodel[["finalModel"]]
 plot(nnmodel)
@@ -605,6 +639,13 @@ saveRDS(nnmodel, file = "neuralnetmodel.rds")
 
 # read model
 nnmodel <- readRDS("neuralnetmodel.rds") 
+
+# test model on training set 
+my_datatrain <- subset(loans_dftrainNNDN, select = -c(targetloanstatus)) 
+predictNN_train <- predict(nnmodel, my_datatrain, type = "raw")
+
+confusionMatrix(data = predictNN_train, reference = loans_dftrainNNDN$targetloanstatus)
+# Accuracy = 64.2%
 
 # use confusion matrix to evaluate model performance on test data.
 
@@ -637,13 +678,13 @@ predictNN_test <- predict(nnmodel, my_data, type = "raw")
 # predictNN_test = factor(predictNN_test, levels = c(1,0), labels = c("Default", "No Default"))
 predictNN_test = factor(predictNN_test)
 
-head(predictNN_test)
-length(predictNN_test)
-
-head(loans_dftestNN$targetloanstatus)
-length(loans_dftestNN$targetloanstatus)
-
 confusionMatrix(data = predictNN_test, reference = loans_dftestNN$targetloanstatus)
+# Accuracy = 61.4% which is comparable to the accuracy for training set
+
+# show relative importance
+VarImp_nn = varImp(nnmodel)
+VarImp_nn %>% 
+  ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
 
 # plot roc for test set
 library(pROC)
