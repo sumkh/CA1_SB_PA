@@ -49,7 +49,6 @@ glimpse(loans_dftrainDN)
 
 loans_pnl = read.csv("loansfortest.csv")
 loans_testpnl = loans_pnl[-inds,]
-
 baserevenue = (loans_testpnl %>%
                 summarize(total = sum(profit)))[1,1]
 baseloss = (loans_testpnl %>%
@@ -57,40 +56,23 @@ baseloss = (loans_testpnl %>%
 baseprofit = baserevenue - baseloss
 
 # to determine optimum threshold point
-pnl = function(predict, reference, loans_testpnl) {
+pnl = function(predict, reference) {
   #profits -> predict no-default correctly (true-negative)
   #lost profits -> predict default incorrectly (false-positive)
   #losses -> predict no-default incorrectly (false-negative)
-  
   thres = seq(0,1,0.01)
   mydf = data.frame(Threshold = numeric(),
-                    Profits = numeric(),
-                    Missed_Profits = numeric(),
-                    Losses = numeric(),
-                    Combined = numeric(),
                     Precision = numeric(),
                     Recall = numeric(),
                     F1 = numeric(),
-                    fpr = numeric(),
-                    newapp = numeric(),
-                    existing = numeric())
+                    fpr = numeric())
   for (i in thres) {
     cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
-    prediction = cbind(loans_testpnl,predict = as.numeric(predict>i))
-    profits = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
-    lost_prof = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
-    losses = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
-    predictedloss = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
-    total = profits - lost_prof - losses
-    
-    predictpositivecost = (prediction %>% filter(predict == 1) %>% summarize(total = n()))[1,1] * 50
-
-    pot_defaulter = losses + 0.9*predictedloss + predictpositivecost
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
     fpr = 1- cm[["byClass"]][["Specificity"]]
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, total, pot_defaulter)
+    mydf[nrow(mydf) + 1,] = list(i,precision, recall, f1, fpr)
   }
   return(mydf)
 }
@@ -198,7 +180,7 @@ plot(roc_glm_test, print.auc = TRUE,print.auc.y = 0.4, col = "green")
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Test","Test-bag"),col=c("green","red"), lty=1, cex=0.8)
 
-prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl)
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus)
 
 # plot PR curve
 prroc_glm %>%
@@ -211,16 +193,6 @@ prroc_glm %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
-
-# plot baseline curve
-prroc_glm %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
-
-prroc_glm %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_glm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 
 #lift chart
 lift_glm = plotlift(pdataglm_test, loans_dftest$targetloanstatus)
