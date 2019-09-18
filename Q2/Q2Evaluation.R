@@ -37,12 +37,14 @@ plotlift = function(predict, reference) {
   a = data.frame(prob = predict, default = reference)
   b = cbind(arrange(a, desc(predict)), random = sample(reference))
   mydf = data.frame(caseload = numeric(),
-                    lift = numeric())
+                    lift = numeric(),
+                    threshold = numeric())
   for (i in caseload) {
     predictdefault = (b %>% top_n(i*nrow(b), wt = prob) %>% count(default))[2,2]
     randomdefault = (b %>% top_n(i*nrow(b), wt = prob) %>% count(random))[2,2]
     lift = as.numeric(predictdefault/randomdefault)
-    mydf[nrow(mydf) + 1,] = list(i, lift)
+    threshold = (b %>% top_n(i*nrow(b), wt = prob) %>% top_n(-1, wt = prob))[1,1]
+    mydf[nrow(mydf) + 1,] = list(i, lift, threshold)
   }
   return(mydf)
 }
@@ -51,10 +53,12 @@ plotprofit = function(predict, foreval) {
   caseload = seq(0.01,1,0.01)
   a = data.frame(prob = predict, foreval)
   mydf = data.frame(caseload = numeric(),
-                    profits = numeric())
+                    profits = numeric(),
+                    threshold = numeric())
   for (i in caseload) {
     profits = (a %>% top_n(-i*nrow(a), wt = prob) %>% summarise(total = sum(profit) - sum(loss)))[1,1]
-    mydf[nrow(mydf) + 1,] = list(i, profits)
+    threshold = (a %>% top_n(-i*nrow(a), wt = prob) %>% top_n(1, wt = prob))[1,1]
+    mydf[nrow(mydf) + 1,] = list(i, profits, threshold)
   }
   return(mydf)
 }
@@ -99,13 +103,24 @@ prroc_rf %>%
 
 # lift charts
 lift_glm = plotlift(foreval$pvalue_glm, foreval$targetloanstatus)
-lift_bag = plotlift(foreval$pvalue_glm, foreval$targetloanstatus)
-
+lift_bag = plotlift(foreval$pvalue_bag, foreval$targetloanstatus)
+lift_tree = plotlift(foreval$pvalue_tree, foreval$targetloanstatus)
+lift_forest = plotlift(foreval$pvalue_forest, foreval$targetloanstatus)
+lift_boosttree = plotlift(foreval$pvalue_boosttree, foreval$targetloanstatus)
+lift_boostlinear = plotlift(foreval$pvalue_boostlinear, foreval$targetloanstatus)
+lift_pca = plotlift(foreval$pvalue_pca, foreval$targetloanstatus)
+lift_NN = plotlift(foreval$pvalue_NN, foreval$targetloanstatus)
 
 #combine lift data frame for plots
 combinelift = data.frame(caseload = lift_glm$caseload,
                          glm = lift_glm$lift,
-                         glmbag = lift_bag$lift)
+                         glmbag = lift_bag$lift,
+                         tree = lift_tree$lift,
+                         forest = lift_forest$lift,
+                         boosttree = lift_boosttree$lift,
+                         boostlinear = lift_boostlinear$lift,
+                         pca = lift_pca$lift,
+                         NN = lift_NN$lift)
 
 combinelift %>%
   gather(key = model, value = value, -caseload) %>%
@@ -119,13 +134,25 @@ combinelift %>%
 baseprofit = plotprofit(runif(nrow(foreval),0.01,1), foreval)
 # lift charts
 profits_glm = plotprofit(foreval$pvalue_glm, foreval)
-profits_bag = plotprofit(foreval$pvalue_glm, foreval)
+profits_bag = plotprofit(foreval$pvalue_bag, foreval)
+profits_tree = plotprofit(foreval$pvalue_tree, foreval)
+profits_forest = plotprofit(foreval$pvalue_forest, foreval)
+profits_boosttree = plotprofit(foreval$pvalue_boosttree, foreval)
+profits_boostlinear = plotprofit(foreval$pvalue_boostlinear, foreval)
+profits_pca = plotprofit(foreval$pvalue_pca, foreval)
+profits_NN = plotprofit(foreval$pvalue_NN, foreval)
 
 #combine profits data frame for plots
 combineprofits = data.frame(caseload = profits_glm$caseload,
                             baseprofit = baseprofit$profits,
                             glm = profits_glm$profits,
-                            glmbag = profits_bag$profits)
+                            glmbag = profits_bag$profits,
+                            tree = profits_tree$profits,
+                            forest = profits_forest$profits,
+                            boosttree = profits_boosttree$profits,
+                            boostlinear = profits_boostlinear$profits,
+                            pca = profits_pca$profits,
+                            NN = profits_NN$profits)
 
 combineprofits %>%
   gather(key = model, value = value, -caseload) %>%
