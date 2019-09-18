@@ -25,16 +25,6 @@ loans_dftest = loans_df[-inds,]
 nrow(loans_dftest)/nrow(loans_df)
 dim(loans_dftest)
 
-#some exploration
-loans_dftrain %>%
-  group_by(targetloanstatus) %>%
-  summarise(avgint = mean(intrate), avgloanamnt = mean(loanamnt))
-
-loans_dftrain %>%
-  group_by(targetloanstatus) %>%
-  count() %>%
-  mutate(perc = n/nrow(loans_dftrain))
-
 # use caret to upsample the train dataset
 loans_dftrainUP = upSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainUP)
@@ -168,32 +158,6 @@ pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response"
 confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
 # accuracy of test set is 84.9% which is comparable to our training set
 
-# Try bagging glm model.
-source("glmbagging.R")
-loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
-
-# test model on trainset and check accuracy with confusion matrix.
-pdataglmbag_train = predictbag(loans_dfglmbag,loans_dftest, method = "max")
-confusionMatrix(data = as.factor(as.numeric(pdataglmbag_train>0.5)), reference = loans_dftest$targetloanstatus)
-# Accuracy on test set is 84.9%
-
-# Perform prediction on testset and look at confusion matrix.
-pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
-confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus)
-# Accuracy on test set is 84.9%
-
-#update the eval dataframe.
-foreval = cbind(foreval, pvalue_glm = pdataglm_test)
-write.csv(foreval, "foreval.csv", row.names = F)
-
-library(pROC)
-# roc syntax: (actual results, predicted probabilities)
-roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
-roc_glmbag_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglmbag_test)
-plot(roc_glm_test, print.auc = TRUE,print.auc.y = 0.4, col = "green")
-plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
-legend(0.1,0.4, legend = c("Test","Test-bag"),col=c("green","red"), lty=1, cex=0.8)
-
 prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus)
 
 # plot PR curve
@@ -220,6 +184,46 @@ cbind(glm = profits_glm, random = baseprofit) %>%
   geom_line(aes(y = glm.profits), color = "red") +
   geom_line(aes(y = random.profits), color = "green")
 
+# Try bagging glm model.
+source("glmbagging.R")
+loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
+
+# test model on trainset and check accuracy with confusion matrix.
+pdataglmbag_train = predictbag(loans_dfglmbag,loans_dftrain, method = "max")
+confusionMatrix(data = as.factor(as.numeric(pdataglmbag_train>0.5)), reference = loans_dftrain$targetloanstatus)
+# Accuracy on test set is 84.9%
+
+# Perform prediction on testset and look at confusion matrix.
+pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
+confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus)
+# Accuracy on test set is 84.9%
+
+prroc_glmbag = pnl(pdataglm_test, loans_dftest$targetloanstatus)
+
+# plot PR curve
+prroc_glmbag %>%
+  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glmbag$Recall, prroc_glmbag$Precision, method = "spline"),3)))
+
+# plot ROC curve
+prroc_glmbag %>%
+  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
+  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glmbag$fpr, prroc_glmbag$Recall, method = "spline"),3)))
+
+#lift chart
+lift_glmbag = plotlift(pdataglmbag_test, loans_dftest$targetloanstatus)
+lift_glmbag %>%
+  ggplot(aes(x = caseload, y = lift)) + 
+  geom_line()
+
+profits_glmbag = plotprofit(pdataglmbag_test, loans_testpnl)
+cbind(glm = profits_glm, random = baseprofit, bag=profits_glmbag) %>%
+  ggplot(aes(x = glm.caseload, y = profits)) + 
+  geom_line(aes(y = glm.profits), color = "red") +
+  geom_line(aes(y = random.profits), color = "green") +
+  geom_line(aes(y = bag.profits), color = "blue")
 
 ########
 
@@ -260,38 +264,24 @@ loans_dfrpart <- rpart(formula = targetloanstatus ~ .,
 rattle::fancyRpartPlot(loans_dfrpart)
 summary(loans_dfrpart)
 
-# Grade is the only selection factor. Try rerun model without using variable, grade.
-loans_dfrpart <- rpart(formula = update.formula(loans_dfrpart, ~ . -grade),
-                       data=loans_dftrainDN,
-                       method = "class",
-                       parms=list(split="information"),
-                       control= rpart.control(minsplit=20,
-                                              minbucket=7,
-                                              usesurrogate=0, 
-                                              maxsurrogate=0),
-                       model=TRUE)
-
-rattle::fancyRpartPlot(loans_dfrpart)
-summary(loans_dfrpart)
 #see variable importance
 loans_dfrpart[["variable.importance"]]
 
 # test model on trainset and check accuracy with confusion matrix.
 pdata_traintree = predict(loans_dfrpart, loans_dftrainDN, type = "class")
 confusionMatrix(pdata_traintree, reference = loans_dftrainDN$targetloanstatus)
-# accuracy of trainset is 62.6%
+# accuracy of trainset is 62.46%
 
 # Perform prediction on testset and look at confusion matrix.
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "class")
 confusionMatrix(pdata_tree, reference = loans_dftest$targetloanstatus)
-# accuracy of trainset is 61.8% which is comparable to our training set
+# accuracy of trainset is 55.24% which is comparable to our training set
 
 # get probabilities for ROC curve
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "prob")
-roc_tree_test = roc(as.numeric(loans_dftest$targetloanstatus),pdata_tree[,2])
-plot(roc_tree_test, print.auc = TRUE)
 
-prroc_rpart = pnl(pdata_tree[,2], loans_dftest$targetloanstatus, loans_testpnl)
+
+prroc_rpart = pnl(pdata_tree[,2], loans_dftest$targetloanstatus)
 
 #plot PR curve
 prroc_rpart %>%
@@ -305,16 +295,6 @@ prroc_rpart %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_rpart$fpr, prroc_rpart$Recall, method = "spline"),3)))
 
-#plot baseline curve
-prroc_rpart %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
-
-prroc_rpart %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_rpart %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
-
 ########
 
 # Random Forest
@@ -322,7 +302,7 @@ prroc_rpart %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 library(randomForest)
 st = Sys.time() 
 rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
-                      ntree = 400,
+                      ntree = 300,
                       mtry = 2,
                       importance = TRUE,
                       cutoff=c(0.5,1-0.5),
@@ -330,13 +310,13 @@ rf_dn <- randomForest(targetloanstatus~., loans_dftrainDN,
 Sys.time()-st #11secs
 plot(rf_dn)
 st=Sys.time()
-t <- tuneRF(loans_dftrainDN[,-7], loans_dftrainDN[,7],
+t <- tuneRF(loans_dftrainDN[,-6], loans_dftrainDN[,6],
             stepFactor = 0.5,
             plot = TRUE,
             ntreeTry = 400,
             trace = TRUE,
             improve = 0.05)
-# mtry 2 has optimum 
+# optimum mtry=2, ntree = 300  
 Sys.time()-st
 
 # Test model on trainset and check accuracy with confusion matrix.
@@ -347,16 +327,12 @@ confusionMatrix(data = pdatarf_train_cm, reference = loans_dftrainDN$targetloans
 # Perform prediction on testset and look at confusion matrix.
 pdatarf_test_cm <- predict(rf_dn, newdata = loans_dftest, type = "response")
 confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatus)
-# accuracy of test set is 65.0%
+# accuracy of test set is 64.87%
+pdatarf_test= predict(rf_dn, newdata = loans_dftest, type = "prob")
 
-# Get probabilities for ROC curve
-pdatarf_test_roc = predict(rf_dn, newdata = loans_dftest, type = "prob")
-roc_rf_test = roc(loans_dftest$targetloanstatus,pdatarf_test_roc[,2])
-plot(roc_rf_test, print.auc = TRUE, print.auc.y = 0.4, col = "green")
-legend(0,0.4, legend = c("Test"),col=c("green"), lty=1, cex=0.8)
-# AUC = 0.698
 
-prroc_rf = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl)
+prroc_rf = pnl(pdatarf_test_cm[,2], loans_dftest$targetloanstatus)
+
 #plot PR curve
 prroc_rf %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
@@ -369,18 +345,8 @@ prroc_rf %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_rf$fpr, prroc_rf$Recall, method = "spline"),3)))
 
-#plot baseline curve
-prroc_rf %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
-
-prroc_rf %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_rf %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
-
 #lift chart
-lift_rf = plotlift(pdatarf_test_roc[,2], loans_dftest$targetloanstatus)
+lift_rf = plotlift(pdatarf_test[,2], loans_dftest$targetloanstatus)
 cbind(glm = lift_glm, rf = lift_rf) %>%
   ggplot(aes(x = glm.caseload)) + 
   geom_line(aes(y = glm.lift), color = "red") +
@@ -398,11 +364,11 @@ cbind(glm = lift_glm, rf = lift_rf, random = lift_random) %>%
 ########
 
 library(xgboost)
-train_x = data.matrix(loans_dftrainDN[,-7])
-train_y = loans_dftrainDN[,7]
+train_x = data.matrix(loans_dftrainDN[,-6])
+train_y = loans_dftrainDN[,6]
 train_y = ifelse(train_y=="1","1","0")
-test_x = data.matrix(loans_dftest[,-7])
-test_y = loans_dftest[,7]
+test_x = data.matrix(loans_dftest[,-6])
+test_y = loans_dftest[,6]
 test_y = ifelse(test_y=="1","1","0")
 
 xgb_train = xgb.DMatrix(data=train_x, label=train_y)
@@ -444,14 +410,24 @@ xgb.plot.importance(importance_matrix = mat_tree[1:20])
 # test on trainset and check confusion matrix
 x2_dn_traintree = predict(xgbc_tree, xgb_train, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_traintree>0.5)), reference = loans_dftrainDN$targetloanstatus)
-# accuracy = 92.1% for training set
+# accuracy = 90.4% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 x2_dn_tree = predict(xgbc_tree, xgb_test, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_tree>0.5)), reference = loans_dftest$targetloanstatus)
-# accuracy = 61.8% for test set
+# accuracy = 62.43% for test set
 
-prroc_xgbtree = pnl(x2_dn_tree, loans_dftest$targetloanstatus, loans_testpnl)
+#update the eval dataframe.
+foreval = cbind(foreval, pvalue_glm = pdataglm_test,
+                pvalue_bag = pdataglmbag_test,
+                pvalue_tree=pdata_tree[,2], 
+                pvalue_forest=pdatarf_test[,2],
+                pvalue_boosttree=x2_dn_tree,
+                pvalue_boostlinear=x2_dn_linear,
+                pvalue_pca=pdataPCA_glm)
+write.csv(foreval, "foreval.csv", row.names = F)
+
+prroc_xgbtree = pnl(x2_dn_tree, loans_dftest$targetloanstatus)
 
 #plot PR curve
 prroc_xgbtree %>%
@@ -465,20 +441,6 @@ prroc_xgbtree %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_xgbtree$fpr, prroc_xgbtree$Recall, method = "spline"),3)))
 
-#plot baseline curve
-prroc_xgbtree %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
-
-prroc_xgbtree %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_xgbtree %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
-
-#roc(loans_dftrain$targetloanstatus,predict(xgbc_tree, xgb_train,type="prob"),print.auc=TRUE,print.auc.y=0.4,plot=TRUE)
-#plot.roc(loans_dftest$targetloanstatus,predict(xgbc_tree, xgb_test,type="prob"),print.auc=TRUE,print.auc.y=0.3,add=TRUE, col="blue")
-#AUC: 0.69
-
 xgbc_linear <- xgb.train(data = xgb_train, 
                          params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]])), 
                          verbose = FALSE, eval_metric = 'auc')
@@ -486,17 +448,17 @@ xgbc_linear <- xgb.train(data = xgb_train,
 # test on trainset and check confusion matrix
 x2_dn_trainlinear = predict(xgbc_linear, xgb_train, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_trainlinear>0.5)), reference = loans_dftrainDN$targetloanstatus)
-# accuracy = 62.8% for training set
+# accuracy = 62.49% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loans_dftest$targetloanstatus)
-# accuracy = 65.6% for test set
+# accuracy = 65.22% for test set
 
 mat_linear = xgb.importance(model=xgbc_linear)
 xgb.plot.importance(importance_matrix = mat_linear[1:20])
 
-prroc_xgblinear = pnl(x2_dn_linear, loans_dftest$targetloanstatus, loans_testpnl)
+prroc_xgblinear = pnl(x2_dn_linear, loans_dftest$targetloanstatus)
 
 #plot PR curve
 prroc_xgblinear %>%
@@ -509,16 +471,6 @@ prroc_xgblinear %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_xgblinear$fpr, prroc_xgblinear$Recall, method = "spline"),3)))
-
-#plot baseline curve
-prroc_xgblinear %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
-
-prroc_xgblinear %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_xgblinear %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 
 ########
 
@@ -566,8 +518,8 @@ plot(cumsum(prop_varex), xlab = "Principal Component",
 
 #add a training set with principal components, we only use the first 30 as 50% of variance is explained.
 
-PCAtraindata = data.frame(targetloanstatus = loans_dftrain$targetloanstatus, prin_comp$x[,1:30])
-PCAtestdata = data.frame(targetloanstatus = loans_dftest$targetloanstatus, predict(prin_comp, newdata = loans_dftest_dummy)[,1:30])
+PCAtraindata = data.frame(targetloanstatus = loans_dftrain$targetloanstatus, prin_comp$x[,1:10])
+PCAtestdata = data.frame(targetloanstatus = loans_dftest$targetloanstatus, predict(prin_comp, newdata = loans_dftest_dummy)[,1:10])
 
 PCAmodel_glm = glm(targetloanstatus ~.,
                    family=binomial, data = PCAtraindata)
@@ -575,14 +527,14 @@ PCAmodel_glm = glm(targetloanstatus ~.,
 # test on training set
 pdataPCA_trainglm = predict(PCAmodel_glm, newdata = PCAtraindata, type = "response")
 confusionMatrix(data = as.factor(as.numeric(pdataPCA_trainglm>0.5)), reference = loans_dftrain$targetloanstatus)
-# accuracy of 84.8% for training set
+# accuracy of 84.82% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
 confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loans_dftest$targetloanstatus)
-# accuracy of 84.9% for test set which is comparable to accuracy for training set
+# accuracy of 84.93% for test set which is comparable to accuracy for training set
 
-prroc_PCAglm = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus, loans_testpnl)
+prroc_PCAglm = pnl(pdatarf_test_roc[,2], loans_dftest$targetloanstatus)
 #plot PR curve
 prroc_PCAglm %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
@@ -595,35 +547,25 @@ prroc_PCAglm %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_PCAglm$fpr, prroc_PCAglm$Recall, method = "spline"),3)))
 
-#plot baseline curve
-prroc_PCAglm %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
-
-prroc_PCAglm %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_PCAglm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
-# Build a neural network model using the neuralnet package.
+# Build a neural network model using the caret and nnet package.
 ########
 
-library(neuralnet)
-
 # Build the model.
-
+# foreval = read.csv("foreval.csv",as.is = TRUE)
+# foreval = foreval %>%
+#   select(-pvalue_NN)
 summary(loans_dftrain)
 
 # data preparation for train dataset
 tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftrain, select = creditpolicy))
 tempdata2 <- model.matrix(~term-1, subset(loans_dftrain, select = term))
-tempdata3 <- model.matrix(~grade-1, subset(loans_dftrain, select = grade))
-tempdata4 <- model.matrix(~delin2years-1, subset(loans_dftrain, select = delin2years))
-tempdata5 <- model.matrix(~homeowner-1, subset(loans_dftrain, select = homeowner))
-tempdata6 <- model.matrix(~verified-1, subset(loans_dftrain, select = verified))
-tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose_mod))
+tempdata3 <- model.matrix(~delin2years-1, subset(loans_dftrain, select = delin2years))
+tempdata4 <- model.matrix(~homeowner-1, subset(loans_dftrain, select = homeowner))
+tempdata5 <- model.matrix(~verified-1, subset(loans_dftrain, select = verified))
+tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose_mod))
 
 loans_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                              tempdata7, subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+                              subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
 loans_dftrain$loanamnt <- scale(loans_dftrain$loanamnt)
 loans_dftrain$intrate <- scale(loans_dftrain$intrate)
@@ -650,14 +592,13 @@ f <- as.formula(paste("targetloanstatus ~", paste(names[!names %in% "targetloans
 
 require(nnet)
 require(caret)
-# nnmodel  <- nnet(f, data=loans_dftrainNNDN,
-#              size=2, decay=1.0e-5, maxit=50)
+
 st = Sys.time() 
 nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
                  tuneGrid=expand.grid(.size=seq(1, 10, by = 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
-#a 34-7-1 network with 253 weights
+#a 27-9-1 network with 262 weights
 
 # show neural network result
 nnmodel[["finalModel"]]
@@ -671,24 +612,23 @@ nnmodel <- readRDS("neuralnetmodel.rds")
 
 # test model on training set 
 my_datatrain <- subset(loans_dftrainNNDN, select = -c(targetloanstatus)) 
-predictNN_train <- predict(nnmodel, my_datatrain, type = "raw")
+predictNN_train_cm <- predict(nnmodel, my_datatrain, type = "raw")
 
-confusionMatrix(data = predictNN_train, reference = loans_dftrainNNDN$targetloanstatus)
-# Accuracy = 64.2%
+confusionMatrix(data = predictNN_train_cm, reference = loans_dftrainNNDN$targetloanstatus)
+# Accuracy = 63.72%
 
 # use confusion matrix to evaluate model performance on test data.
 
 # data preparation
 tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftest, select = creditpolicy))
 tempdata2 <- model.matrix(~term-1, subset(loans_dftest, select = term))
-tempdata3 <- model.matrix(~grade-1, subset(loans_dftest, select = grade))
-tempdata4 <- model.matrix(~delin2years-1, subset(loans_dftest, select = delin2years))
-tempdata5 <- model.matrix(~homeowner-1, subset(loans_dftest, select = homeowner))
-tempdata6 <- model.matrix(~verified-1, subset(loans_dftest, select = verified))
-tempdata7 <- model.matrix(~purpose_mod-1, subset(loans_dftest, select = purpose_mod))
+tempdata3 <- model.matrix(~delin2years-1, subset(loans_dftest, select = delin2years))
+tempdata4 <- model.matrix(~homeowner-1, subset(loans_dftest, select = homeowner))
+tempdata5 <- model.matrix(~verified-1, subset(loans_dftest, select = verified))
+tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftest, select = purpose_mod))
 
 loans_dftestNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                             tempdata7, subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+                              subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
 loans_dftest$loanamnt <- scale(loans_dftest$loanamnt)
 loans_dftest$intrate <- scale(loans_dftest$intrate)
@@ -702,12 +642,13 @@ loans_dftest$logannualinc<- scale(loans_dftest$logannualinc)
 loans_dftest$ratioacc<- scale(loans_dftest$ratioacc)
 
 my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
-predictNN_test <- predict(nnmodel, my_data, type = "raw")
+predictNN_test_cm <- predict(nnmodel, my_data, type = "raw")
+predictNN_test <- predict(nnmodel, my_data, type = "prob")
 
 # predictNN_test = factor(predictNN_test, levels = c(1,0), labels = c("Default", "No Default"))
 predictNN_test = factor(predictNN_test)
 
-confusionMatrix(data = predictNN_test, reference = loans_dftestNN$targetloanstatus)
+confusionMatrix(data = predictNN_test_cm, reference = loans_dftestNN$targetloanstatus)
 # Accuracy = 61.4% which is comparable to the accuracy for training set
 
 # show relative importance
@@ -715,16 +656,9 @@ VarImp_nn = varImp(nnmodel)
 VarImp_nn %>% 
   ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
 
-# plot roc for test set
-library(pROC)
 predictNN_test_roc <- predict(nnmodel, my_data, type = "prob")
-head(predictNN_test_roc)[,1]
-length(predictNN_test_roc[,1])
-ROC_NNtest = roc(loans_dftestNN$targetloanstatus,predictNN_test_roc[,1]) 
-plot(ROC_NNtest,print.auc = TRUE, print.auc.y = 0.3, col = "red")
 
-#prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl, baseprofit)
-prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus, loans_testpnl)
+prroc_nn = pnl(predictNN_test_roc[,2], loans_dftestNN$targetloanstatus)
 #plot PR curve
 prroc_nn %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
@@ -737,56 +671,16 @@ prroc_nn %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_nn$fpr, prroc_nn$Recall, method = "spline"),3)))
 
-prroc_nn %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+#foreval = cbind(foreval,pvalue_NN = predictNN_test[,2])
 
-prroc_nn %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_nn %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
+foreval = cbind(loans_dftest,select(loans_testpnl, -targetloanstatus),
+                pvalue_glm = pdataglm_test,
+                pvalue_bag = pdataglmbag_test,
+                pvalue_tree=pdata_tree[,2], 
+                pvalue_forest=pdatarf_test[,2],
+                pvalue_boosttree=x2_dn_tree,
+                pvalue_boostlinear=x2_dn_linear,
+                pvalue_pca=pdataPCA_glm,
+                pvalue_NN=predictNN_test[,2])
+write.csv(foreval, "foreval.csv", row.names = F)
 
-# prroc_nn %>%
-#   ggplot(aes(x = Threshold, y = baseline)) +
-#   geom_line() + ylim(-500000,500000)
-
-# Evaluation
-############
-
-#Compute Test set's money
-loans_pnl = read.csv("loansfortest.csv")
-loans_testpnl = loans_pnl[-inds,]
-
-pdataglm_test = predict(loans_dfglm3, newdata = loans_dftest, type = "response")
-#optimum threshold based on median profit/loss
-# pdataglm_test = as.numeric(pdataglm_test>0.8)
-# loans_pnlglm = cbind(loans_pnl[-inds,],pdataglm_test)
-# 
-# a = (loans_pnlglm %>% filter(pdataglm_test == 0) %>% summarize(total = sum(profit) - sum(loss)))[1,1]
-# b = (loans_pnlglm %>% filter(pdataglm_test == 1) %>% summarize(total = sum(profit)))[1,1]
-# 
-# glmearn = a-b -baseprofit
-
-prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl, baseprofit)
-prroc_glm %>% 
-  select(-Precision, -Recall, -F1, -fpr, -Combined) %>%
-  melt(id.vars = "Threshold") %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable, size = variable)) + scale_size_manual(values = c(0.75,0.75,0.75,1.5)) + scale_color_manual(values = c("green","red4","red","gold2")) +
-  labs(title = "Combined Profits of Lending Club vs Threshold Level") + facet_wrap(~variable, scales = "free_y")
-
-prroc_glm %>%
-  ggplot(aes(x = Threshold, y = baseline)) +
-  geom_line() + ylim(-500000,500000)
-
-#plot PR curve
-prroc_glm %>%
-  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
-  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
-
-#plot ROC curve
-prroc_glm %>%
-  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) +
-  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
