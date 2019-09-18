@@ -229,7 +229,7 @@ errors %>%
   filter(error == "NAs") %>% filter(h == 1) %>%
   ggplot(aes(x = model)) +
   geom_col(aes(y=value, fill=model)) + facet_wrap(~error) +
-  labs(title = "ts Cross Validation results") + ylab("Unstable models") +
+  labs(title = "TS Cross Validation Results") + xlab("Model") + ylab("Number of Unstable Models") +
   scale_fill_manual(values = c("#22b8d6", "#4922d6","#228b75"))
 
 errors %>%
@@ -238,7 +238,7 @@ errors %>%
   geom_smooth(se = FALSE, size = 1.5) +
   geom_point(size = 2) + 
   facet_wrap(~error, nrow = 3) +
-  labs(title = "ts Cross Validation results") + 
+  labs(title = "TS Cross Validation Results") + 
   scale_x_continuous(breaks = seq(1, 12, by = 1)) +
   scale_color_manual(values = c("#22b8d6", "#228b75"))
 
