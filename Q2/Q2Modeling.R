@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR)
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -44,56 +44,63 @@ loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetlo
 glimpse(loans_dftrainDN)
 ########
 
-# Create evaluation Metric
+# Create evaluation Metrics
 ########
 
 loans_pnl = read.csv("loansfortest.csv")
 loans_testpnl = loans_pnl[-inds,]
 
-baserevenue = (loans_testpnl %>%
-                summarize(total = sum(profit)))[1,1]
-baseloss = (loans_testpnl %>%
-              summarize(total = sum(loss)))[1,1]
-baseprofit = baserevenue - baseloss
-
 # to determine optimum threshold point
-pnl = function(predict, reference, loans_testpnl) {
+pnl = function(predict, reference) {
   #profits -> predict no-default correctly (true-negative)
   #lost profits -> predict default incorrectly (false-positive)
   #losses -> predict no-default incorrectly (false-negative)
-  
   thres = seq(0,1,0.01)
   mydf = data.frame(Threshold = numeric(),
-                    Profits = numeric(),
-                    Missed_Profits = numeric(),
-                    Losses = numeric(),
-                    Combined = numeric(),
                     Precision = numeric(),
                     Recall = numeric(),
                     F1 = numeric(),
-                    fpr = numeric(),
-                    newapp = numeric(),
-                    existing = numeric())
+                    fpr = numeric())
   for (i in thres) {
     cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
-    prediction = cbind(loans_testpnl,predict = as.numeric(predict>i))
-    profits = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
-    lost_prof = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 0) %>% summarize(sum(profit)))[1,1]
-    losses = (prediction %>% filter(predict == 0) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
-    predictedloss = (prediction %>% filter(predict == 1) %>% filter(targetloanstatus == 1) %>% summarize(sum(loss)))[1,1]
-    total = profits - lost_prof - losses
-    
-    predictpositivecost = (prediction %>% filter(predict == 1) %>% summarize(total = n()))[1,1] * 50
-
-    pot_defaulter = losses + 0.9*predictedloss + predictpositivecost
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
     fpr = 1- cm[["byClass"]][["Specificity"]]
-    mydf[nrow(mydf) + 1,] = list(i,profits,lost_prof,losses,total, precision, recall, f1, fpr, total, pot_defaulter)
+    mydf[nrow(mydf) + 1,] = list(i,precision, recall, f1, fpr)
   }
   return(mydf)
 }
+
+plotlift = function(predict, reference) {
+  caseload = seq(0.01,1,0.01)
+  a = data.frame(prob = predict, default = reference)
+  b = cbind(arrange(a, desc(predict)), random = sample(reference))
+  mydf = data.frame(caseload = numeric(),
+                    lift = numeric())
+  for (i in caseload) {
+    predictdefault = (b %>% top_n(i*nrow(b), wt = prob) %>% count(default))[2,2]
+    randomdefault = (b %>% top_n(i*nrow(b), wt = prob) %>% count(random))[2,2]
+    lift = as.numeric(predictdefault/randomdefault)
+    mydf[nrow(mydf) + 1,] = list(i, lift)
+  }
+  return(mydf)
+}
+
+plotprofit = function(predict, loans_testpnl) {
+  caseload = seq(0.01,1,0.01)
+  a = data.frame(prob = predict, select(loans_testpnl,-targetloanstatus))
+  mydf = data.frame(caseload = numeric(),
+                    profits = numeric())
+  for (i in caseload) {
+    profits = (a %>% top_n(-i*nrow(a), wt = prob) %>% summarise(total = sum(profit) - sum(loss)))[1,1]
+    mydf[nrow(mydf) + 1,] = list(i, profits)
+  }
+  return(mydf)
+}
+set.seed(2019)
+baseprofit = plotprofit(runif(nrow(loans_dftest),0.01,1), loans_testpnl)
+
 ###################
 
 # DEVELOP MODEL
@@ -182,7 +189,7 @@ plot(roc_glm_test, print.auc = TRUE,print.auc.y = 0.4, col = "green")
 plot(roc_glmbag_test, print.auc = TRUE, add = TRUE, print.auc.y = 0.3, col = "red")
 legend(0.1,0.4, legend = c("Test","Test-bag"),col=c("green","red"), lty=1, cex=0.8)
 
-prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus, loans_testpnl)
+prroc_glm = pnl(pdataglm_test, loans_dftest$targetloanstatus)
 
 # plot PR curve
 prroc_glm %>%
@@ -196,16 +203,17 @@ prroc_glm %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
 
-# plot baseline curve
-prroc_glm %>%
-  select(Threshold, newapp, existing) %>%
-  gather(key = variable, value = value, -Threshold) %>%
-  ggplot(aes(x = Threshold, y = value)) +
-  geom_line(aes(color = variable)) + facet_wrap(~variable, scales = "free")
+#lift chart
+lift_glm = plotlift(pdataglm_test, loans_dftest$targetloanstatus)
+lift_glm %>%
+  ggplot(aes(x = caseload, y = lift)) + 
+  geom_line()
 
-prroc_glm %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
-prroc_glm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
-
+profits_glm = plotprofit(pdataglm_test, loans_testpnl)
+cbind(glm = profits_glm, random = baseprofit) %>%
+  ggplot(aes(x = glm.caseload, y = profits)) + 
+  geom_line(aes(y = glm.profits), color = "red") +
+  geom_line(aes(y = random.profits), color = "green")
 ########
 
 # Decision Tree model (rpart)
@@ -363,6 +371,20 @@ prroc_rf %>%
 
 prroc_rf %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
 prroc_rf %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
+
+#lift chart
+lift_rf = plotlift(pdatarf_test_roc[,2], loans_dftest$targetloanstatus)
+cbind(glm = lift_glm, rf = lift_rf) %>%
+  ggplot(aes(x = glm.caseload)) + 
+  geom_line(aes(y = glm.lift), color = "red") +
+  geom_line(aes(y = rf.lift), color = "blue")
+
+lift_random = plotlift(runif(nrow(loans_dftest),0.01,1),loans_dftest$targetloanstatus)
+cbind(glm = lift_glm, rf = lift_rf, random = lift_random) %>%
+  ggplot(aes(x = glm.caseload, y = lift)) + 
+  geom_line(aes(y = glm.lift), color = "red") +
+  geom_line(aes(y = rf.lift), color = "blue") +
+  geom_line(aes(y = random.lift), color = "green")
 ########
 
 # Boosting
