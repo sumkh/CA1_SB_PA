@@ -49,6 +49,7 @@ glimpse(loans_dftrainDN)
 
 loans_pnl = read.csv("loansfortest.csv")
 loans_testpnl = loans_pnl[-inds,]
+foreval = cbind(loans_dftest, select(loans_testpnl,-targetloanstatus))
 
 # to determine optimum threshold point
 pnl = function(predict, reference) {
@@ -181,6 +182,10 @@ pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "max")
 confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus)
 # Accuracy on test set is 84.9%
 
+#update the eval dataframe.
+foreval = cbind(foreval, pvalue_glm = pdataglm_test)
+write.csv(foreval, "foreval.csv", row.names = F)
+
 library(pROC)
 # roc syntax: (actual results, predicted probabilities)
 roc_glm_test = roc(as.numeric(loans_dftest$targetloanstatus),pdataglm_test)
@@ -214,6 +219,8 @@ cbind(glm = profits_glm, random = baseprofit) %>%
   ggplot(aes(x = glm.caseload, y = profits)) + 
   geom_line(aes(y = glm.profits), color = "red") +
   geom_line(aes(y = random.profits), color = "green")
+
+
 ########
 
 # Decision Tree model (rpart)
