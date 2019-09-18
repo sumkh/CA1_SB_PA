@@ -1,7 +1,6 @@
 pacman::p_load(dplyr, tidyverse, ggplot2, lubridate, reshape2, stringr, car, caret, ggpubr, dlookr, inspectdf)
 
-# setwd("C:/Users/nelso/Documents/Github/CA1_SB_PA/Q2")
-setwd("~/WorkDirectory")
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 loans_all = read.csv("loans.csv", as.is = TRUE)
 summary(loans_all)
@@ -24,13 +23,7 @@ loans$targetloanstatus <- as.factor(loans$targetloanstatus)
 
 # EDA
 ###################
-
-# Inspecting the Variables
-# install.packages("inspectdf")
-# library("inspectdf")
-# # takes a long time to run, gives overview histogram of all variables
-# inspect_cat(loans) %>% show_plot()
-# inspect_num(loans_all) %>% show_plot()
+inspect_num(loans_all) %>% show_plot()
 
 # Variables related to business.
 
@@ -135,6 +128,15 @@ loans[,c("term","emplength")] =
   lapply(loans[,c("term","emplength")], as.integer)
 table(loans$emplength, useNA = "always")
 
+# recode grade into numeric
+loans = loans %>%
+  mutate(recodegrade = (case_when(grade == "A" ~ 1,
+                                  grade == "B" ~ 2,
+                                  grade == "C" ~ 3,
+                                  grade == "D" ~ 4,
+                                  grade == "E" ~ 5,
+                                  grade == "F" ~ 6,
+                                  grade == "G" ~ 7)))
 # Create 2 new variables for emp10years and delinq2ears
 loans = loans %>%
   mutate(delin2years = factor(case_when(delinq2yrs > 0 ~ "Y",
@@ -208,7 +210,7 @@ glimpse(loans_test)
 corrplot::corrplot(cor(loans_df[, sapply(loans_df, is.numeric)],
                        use="complete.obs"), method = "number", type='lower')
 
-loans_df = select(loans_df, -c("installment"))
+loans_df = select(loans_df, -c("installment","grade","recodegrade"))
 
 #visualise the loans_df data set for modelling
 inspect_cat(loans_df) %>% show_plot()

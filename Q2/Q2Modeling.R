@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, dummies)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR)
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -94,6 +94,22 @@ pnl = function(predict, reference, loans_testpnl) {
   }
   return(mydf)
 }
+
+plotlift = function(predict, reference) {
+  caseload = seq(0.01,1,0.01)
+  a = data.frame(prob = predict, default = reference)
+  b = cbind(arrange(a, desc(predict)), random = sample(reference))
+  mydf = data.frame(caseload = numeric(),
+                    lift = numeric())
+  for (i in caseload) {
+    predictdefault = (b %>% top_n(i*nrow(b), wt = prob) %>% count(default))[2,2]
+    randomdefault = (b %>% top_n(i*nrow(b), wt = prob) %>% count(random))[2,2]
+    lift = as.numeric(predictdefault/randomdefault)
+    mydf[nrow(mydf) + 1,] = list(i, lift)
+  }
+  return(mydf)
+}
+
 ###################
 
 # DEVELOP MODEL
@@ -206,6 +222,11 @@ prroc_glm %>%
 prroc_glm %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
 prroc_glm %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
 
+#lift chart
+lift_glm = plotlift(pdataglm_test, loans_dftest$targetloanstatus)
+lift_glm %>%
+  ggplot(aes(x = caseload, y = lift)) + 
+  geom_line()
 ########
 
 # Decision Tree model (rpart)
@@ -363,6 +384,20 @@ prroc_rf %>%
 
 prroc_rf %>% select(Threshold, existing) %>% top_n(-1, wt = existing)
 prroc_rf %>% select(Threshold, newapp) %>% top_n(1, wt = newapp)
+
+#lift chart
+lift_rf = plotlift(pdatarf_test_roc[,2], loans_dftest$targetloanstatus)
+cbind(glm = lift_glm, rf = lift_rf) %>%
+  ggplot(aes(x = glm.caseload)) + 
+  geom_line(aes(y = glm.lift), color = "red") +
+  geom_line(aes(y = rf.lift), color = "blue")
+
+lift_random = plotlift(runif(nrow(loans_dftest),0.01,1),loans_dftest$targetloanstatus)
+cbind(glm = lift_glm, rf = lift_rf, random = lift_random) %>%
+  ggplot(aes(x = glm.caseload, y = lift)) + 
+  geom_line(aes(y = glm.lift), color = "red") +
+  geom_line(aes(y = rf.lift), color = "blue") +
+  geom_line(aes(y = random.lift), color = "green")
 ########
 
 # Boosting
