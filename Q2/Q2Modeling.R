@@ -358,6 +358,16 @@ cbind(glm = lift_glm, rf = lift_rf, random = lift_random) %>%
   geom_line(aes(y = glm.lift), color = "red") +
   geom_line(aes(y = rf.lift), color = "blue") +
   geom_line(aes(y = random.lift), color = "green")
+
+varimp_rf = as.data.frame(varImp(rf_dn))
+colnames(varimp_rf) = c("importance","importance2")
+varimp_rf %>%
+  select(-importance2)
+varimp_rf = data.frame(names=rownames(varimp_rf),importance=varimp_rf$importance)
+varimp_rf$names <- factor(varimp_rf$names, levels = varimp_rf$names[order(varimp_rf$importance)])
+varimp_rf %>%
+  ggplot(aes(x = names, y = importance))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
+
 ########
 
 # Boosting
