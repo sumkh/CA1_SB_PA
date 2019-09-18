@@ -48,6 +48,36 @@ p2 = loans %>%
   geom_boxplot(aes(y=revolbal), outlier.shape = NA) + facet_grid(~grade) + 
   scale_y_continuous(limits = c(0,20000))
 
+loans %>%
+  ggplot(aes(x = grade)) +
+  geom_boxplot(aes(y=intrate)) +
+  labs(title = "Relationship of Interest Rate with Loan Grade")
+
+loans %>%
+  ggplot(aes(x=as.factor(delinq2yrs))) +
+  geom_bar(fill = "green4") +
+  labs(title="Incidences of Delinquency", x = "delinq2yrs", y = "Number", fill = "Loan Status") +
+  theme_bw() +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank())
+
+loans %>%
+  ggplot(aes(x=annualinc)) +
+  geom_histogram(fill = "green4") +
+  labs(title="Distribution of Annual Income", x = "annualinc", y = "Number", fill = "Loan Status") +
+  theme_bw() +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank())
+
+loans %>%
+  ggplot(aes(x=revolbal)) +
+  geom_histogram(fill = "green4") +
+  labs(title="Distribution of Credit Revolving Balance", x = "revolbal", y = "Number", fill = "Loan Status") +
+  theme_bw() +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank())
+
+
 #geom_area plot for continuous variables
 p3 = loans %>%
   ggplot(aes(x= revolbal)) +
@@ -111,8 +141,9 @@ loans %>%
 loans %>%
   group_by(grade, targetloanstatus) %>%
   summarise(count_level = n(), percentage = n()/nrow(loans)) %>%
-  ggplot(aes(x = grade, y = percentage, fill = targetloanstatus)) +
+  ggplot(aes(x = grade, y = percentage, fill = as.factor(targetloanstatus))) +
   geom_bar(position = 'fill', stat = 'identity') +
+  scale_fill_manual(values = c("gold2", "green4"), labels = c("No Default", "Default")) +
   labs(title="Current Loan Status by Grade", x = "Grade", y = "Percentage", fill = "Loan Status") 
 
 # some non-visual data tables
@@ -178,6 +209,7 @@ loans %>%
   theme(legend.position = "bottom", 
         panel.grid = element_blank())
 
+
 loans = loans%>%
   mutate(purpose_mod = recode_factor(purpose,"home_improvement" = "living_expenses", 
                                      "educational" = "living_expenses", "home_improvement" = "living_expenses", "house" = "living_expenses"
@@ -186,6 +218,19 @@ loans = loans%>%
 
 unique(loans$purpose_mod)
 str(loans$purpose_mod)
+
+
+loans %>%
+  ggplot(aes(x=purpose)) +
+  geom_bar(fill = "green4") +
+  labs(title="Purpose", x = "Purpose", y = "Number", fill = "Loan Status") +
+  facet_grid(~purpose_mod, scale = "free") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank())
+
+
 
 # plot purpose with modified category
 loans %>%
