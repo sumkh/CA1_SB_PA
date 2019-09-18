@@ -49,11 +49,6 @@ glimpse(loans_dftrainDN)
 
 loans_pnl = read.csv("loansfortest.csv")
 loans_testpnl = loans_pnl[-inds,]
-baserevenue = (loans_testpnl %>%
-                summarize(total = sum(profit)))[1,1]
-baseloss = (loans_testpnl %>%
-              summarize(total = sum(loss)))[1,1]
-baseprofit = baserevenue - baseloss
 
 # to determine optimum threshold point
 pnl = function(predict, reference) {
@@ -106,10 +101,6 @@ plotprofit = function(predict, loans_testpnl) {
 set.seed(2019)
 baseprofit = plotprofit(runif(nrow(loans_dftest),0.01,1), loans_testpnl)
 
-cbind(glm = a, random = baseprofit) %>%
-  ggplot(aes(x = glm.caseload, y = profits)) + 
-  geom_line(aes(y = glm.profits), color = "red") +
-  geom_line(aes(y = random.profits), color = "green")
 ###################
 
 # DEVELOP MODEL
@@ -217,6 +208,12 @@ lift_glm = plotlift(pdataglm_test, loans_dftest$targetloanstatus)
 lift_glm %>%
   ggplot(aes(x = caseload, y = lift)) + 
   geom_line()
+
+profits_glm = plotprofit(pdataglm_test, loans_testpnl)
+cbind(glm = profits_glm, random = baseprofit) %>%
+  ggplot(aes(x = glm.caseload, y = profits)) + 
+  geom_line(aes(y = glm.profits), color = "red") +
+  geom_line(aes(y = random.profits), color = "green")
 ########
 
 # Decision Tree model (rpart)
