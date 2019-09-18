@@ -596,9 +596,9 @@ require(caret)
 st = Sys.time() 
 nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
-                 tuneGrid=expand.grid(.size=seq(1, 10, by = 2),.decay=c(0,0.001,0.1))) 
+                 tuneGrid=expand.grid(.size=seq(1, 14, by = 1),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
-#a 27-9-1 network with 262 weights
+#a 27-11-1 network with 320 weights
 
 # show neural network result
 nnmodel[["finalModel"]]
@@ -615,7 +615,7 @@ my_datatrain <- subset(loans_dftrainNNDN, select = -c(targetloanstatus))
 predictNN_train_cm <- predict(nnmodel, my_datatrain, type = "raw")
 
 confusionMatrix(data = predictNN_train_cm, reference = loans_dftrainNNDN$targetloanstatus)
-# Accuracy = 63.72%
+# Accuracy = 63.7%
 
 # use confusion matrix to evaluate model performance on test data.
 
@@ -649,7 +649,7 @@ predictNN_test <- predict(nnmodel, my_data, type = "prob")
 predictNN_test = factor(predictNN_test)
 
 confusionMatrix(data = predictNN_test_cm, reference = loans_dftestNN$targetloanstatus)
-# Accuracy = 61.4% which is comparable to the accuracy for training set
+# Accuracy = 63.2% which is comparable to the accuracy for training set
 
 # show relative importance
 VarImp_nn = varImp(nnmodel)
