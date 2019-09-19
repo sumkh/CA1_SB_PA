@@ -8,6 +8,9 @@ loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
 loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
 
+loans_pnl = read.csv("loansfortest.csv")
+loans_pnltest = loans_pnl[-inds,]
+
 # Sampling
 ##########
 #Create our training set using stratified sampling.
@@ -468,6 +471,7 @@ predictNN_test_roc <- predict(nnmodel, my_data, type = "prob")
 #foreval = cbind(foreval,pvalue_NN = predictNN_test[,2]) #if need to tune parameters
 
 foreval = cbind(loans_dftest,
+                select(loans_testpnl, -targetloanstatus),
                 pvalue_glm = pdataglm_test,
                 pvalue_bag = pdataglmbag_test,
                 pvalue_tree=pdata_tree[,2], 
