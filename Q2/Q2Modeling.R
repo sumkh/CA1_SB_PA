@@ -300,7 +300,7 @@ confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loan
 # accuracy = 65.22% for test set
 
 mat_linear = xgb.importance(model=xgbc_linear)
-xgb.plot.importance(importance_matrix = mat_linear[1:20])
+xgb.plot.importance(importance_matrix = mat_linear[1:20]) #think need to change lambda and alpha(line 274) which are for normalizing
 
 ########
 
