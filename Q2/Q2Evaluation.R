@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools)
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -11,7 +11,7 @@ set.seed(2019)
 ########
 # Evaluation Functions
 ########
-pnl = function(predict, reference) {
+prroc = function(predict, reference) {
   #profits -> predict no-default correctly (true-negative)
   #lost profits -> predict default incorrectly (false-positive)
   #losses -> predict no-default incorrectly (false-negative)
@@ -33,6 +33,7 @@ pnl = function(predict, reference) {
 }
 
 plotlift = function(predict, reference) {
+  set.seed(2901)
   caseload = seq(0.01,1,0.01)
   a = data.frame(prob = predict, default = reference)
   b = cbind(arrange(a, desc(predict)), random = sample(reference))
@@ -62,14 +63,19 @@ plotprofit = function(predict, foreval) {
   }
   return(mydf)
 }
-set.seed(2019)
-baseprofit = plotprofit(runif(nrow(foreval),0.01,1), foreval)
 
 ########
 # evaluating ROC and PR curves curves
 
 ########
-prroc_glm = pnl(foreval$pvalue_glm, foreval$targetloanstatus)
+prroc_glm = prroc(foreval$pvalue_glm, foreval$targetloanstatus)
+prroc_bag = prroc(foreval$pvalue_bag, foreval$targetloanstatus)
+prroc_tree = prroc(foreval$pvalue_tree, foreval$targetloanstatus)
+prroc_forest = prroc(foreval$pvalue_forest, foreval$targetloanstatus)
+prroc_boosttree = prroc(foreval$pvalue_boosttree, foreval$targetloanstatus)
+prroc_boostlinear = prroc(foreval$pvalue_boostlinear, foreval$targetloanstatus)
+prroc_pca = prroc(foreval$pvalue_pca, foreval$targetloanstatus)
+prroc_NN = prroc(foreval$pvalue_NN, foreval$targetloanstatus)
 
 # plot PR curve
 prroc_glm %>%
@@ -83,24 +89,23 @@ prroc_glm %>%
   geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "ROC Curve for glm model") +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
 
-prroc_rf = pnl(foreval$pvalue_rf, foreval$targetloanstatus)
-
 # plot PR curve
-prroc_rf %>%
+prroc_forest %>%
   ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "PR Curve for glm model") +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "PR Curve for forest model") +
   annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
 
 # plot ROC curve
-prroc_rf %>%
+prroc_forest %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "ROC Curve for glm model") +
+  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "ROC Curve for forest model") +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
 
 ########
 # evaluating lift curves
 ########
-
+set.seed(2019)
+baselift = plotlift(runif(nrow(foreval),0.01,1), foreval$targetloanstatus)
 # lift charts
 lift_glm = plotlift(foreval$pvalue_glm, foreval$targetloanstatus)
 lift_bag = plotlift(foreval$pvalue_bag, foreval$targetloanstatus)
@@ -113,6 +118,7 @@ lift_NN = plotlift(foreval$pvalue_NN, foreval$targetloanstatus)
 
 #combine lift data frame for plots
 combinelift = data.frame(caseload = lift_glm$caseload,
+                         random = baselift$lift,
                          glm = lift_glm$lift,
                          glmbag = lift_bag$lift,
                          tree = lift_tree$lift,
@@ -122,10 +128,22 @@ combinelift = data.frame(caseload = lift_glm$caseload,
                          pca = lift_pca$lift,
                          NN = lift_NN$lift)
 
+#plot for linear models
 combinelift %>%
-  gather(key = model, value = value, -caseload) %>%
+  select(caseload, random, glm, glmbag, boostlinear, pca) %>%
+  gather(key = Model, value = value, -caseload) %>% 
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = model)) + labs(title = "Lift curve with ranked caseload")
+  geom_line(aes(color = factor(Model, levels = c("glmbag","glm","pca","boostlinear","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("mediumpurple", "orchid2", "red3", "darkgoldenrod", "black"),
+                     name = "Model")
+
+combinelift %>%
+  select(caseload, random, tree, forest, boosttree, NN) %>%
+  gather(key = Model, value = value, -caseload) %>%
+  ggplot(aes(x = caseload, y = value)) + 
+  geom_line(aes(color = factor(Model, levels = c("forest","NN","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("dodgerblue4", "darkgreen", "cyan", "yellowgreen", "black"),
+                     name = "Model")
 
 ########
 # evaluating profit curves
@@ -144,7 +162,7 @@ profits_NN = plotprofit(foreval$pvalue_NN, foreval)
 
 #combine profits data frame for plots
 combineprofits = data.frame(caseload = profits_glm$caseload,
-                            baseprofit = baseprofit$profits,
+                            random = baseprofit$profits,
                             glm = profits_glm$profits,
                             glmbag = profits_bag$profits,
                             tree = profits_tree$profits,
@@ -155,6 +173,17 @@ combineprofits = data.frame(caseload = profits_glm$caseload,
                             NN = profits_NN$profits)
 
 combineprofits %>%
-  gather(key = model, value = value, -caseload) %>%
+  select(caseload, random, glm, glmbag, boostlinear, pca) %>%
+  gather(key = Model, value = value, -caseload) %>% 
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = model)) + labs(title = "Profits curve with ranked caseload")
+  geom_line(aes(color = factor(Model, levels = c("glmbag","glm","pca","boostlinear","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("mediumpurple", "orchid2", "red3", "darkgoldenrod", "black"),
+                     name = "Model")
+
+combineprofits %>%
+  select(caseload, random, tree, forest, boosttree, NN) %>%
+  gather(key = Model, value = value, -caseload) %>%
+  ggplot(aes(x = caseload, y = value)) + 
+  geom_line(aes(color = factor(Model, levels = c("forest","NN","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("dodgerblue4", "darkgreen", "cyan", "yellowgreen", "black"),
+                     name = "Model")
