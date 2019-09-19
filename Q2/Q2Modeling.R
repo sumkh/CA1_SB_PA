@@ -386,10 +386,6 @@ xgbcv_tree = xgb.cv(data = xgb_train,
                     params = params_tree, nrounds = 100, nfold = 5, 
                     showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
 
-xgbcv_linear = xgb.cv(data = xgb_train, 
-                      params = params_linear, nrounds = 100, nfold = 5, 
-                      showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
-
 # identify iteration with lowest error for xgb tree
 which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]]))
 which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]]))
@@ -433,6 +429,11 @@ prroc_xgbtree %>%
 params_linear = list(booster = "gblinear",
                      feature_selector = "cyclic", lambda = 0, alpha = 0,
                      objective = "binary:logistic")
+
+# try xgboost cross validation
+xgbcv_linear = xgb.cv(data = xgb_train, 
+                      params = params_linear, nrounds = 100, nfold = 5, 
+                      showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
 
 # identify iteration with lowest error for xgb linear
 which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]]))
