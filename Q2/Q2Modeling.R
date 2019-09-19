@@ -3,7 +3,7 @@ pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTool
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-# read csv file (to remove after merging file)
+# read csv file 
 loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
 loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
@@ -364,7 +364,6 @@ pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
 confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loans_dftest$targetloanstatus)
 # accuracy of 84.93% for test set which is comparable to accuracy for training set
 
-
 # Build a neural network model using the caret and nnet package.
 ########
 
@@ -373,34 +372,23 @@ confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loan
 # foreval = foreval %>% #if need to tune NN parameters
 # select(-pvalue_NN) #if need to tune NN parameters
 
-normalize <- function(x)
-{
-  return((x- min(x)) /(max(x)-min(x)))
-}
+# normalising numerical variables
+y = loans_dftrain$targetloanstatus
+preProcess_range_model <- preProcess(loans_dftrain, method='range')
+loans_dftrain =  predict(preProcess_range_model, newdata = loans_dftrain)
+apply(loans_dftrain[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
+ 
+# One-Hot Encoding
+# Creating dummy variables is converting a categorical variable to as many binary variables as here are categories.
+dummies_model = dummyVars(targetloanstatus ~ ., data=loans_dftrain)
 
-# data preparation for train dataset
-tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftrain, select = creditpolicy))
-tempdata2 <- model.matrix(~term-1, subset(loans_dftrain, select = term))
-tempdata3 <- model.matrix(~delin2years-1, subset(loans_dftrain, select = delin2years))
-tempdata4 <- model.matrix(~homeowner-1, subset(loans_dftrain, select = homeowner))
-tempdata5 <- model.matrix(~verified-1, subset(loans_dftrain, select = verified))
-tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose_mod))
+# Create the dummy variables using predict. The Y variable (Purchase) will not be present in trainData_mat.
+loans_dftrain_mat <- predict(dummies_model, newdata = loans_dftrain)
+loans_dftrainNN <- data.frame(loans_dftrain_mat)
+loans_dftrainNN$targetloanstatus = y
+str(loans_dftrainNN)
 
-loans_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                              subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
-
-loans_dftrain$loanamnt <- normalize(loans_dftrain$loanamnt)
-loans_dftrain$intrate <- normalize(loans_dftrain$intrate)
-loans_dftrain$emplength <- normalize(loans_dftrain$emplength)
-loans_dftrain$dti <- normalize(loans_dftrain$dti)
-loans_dftrain$inqlast6mths <- normalize(loans_dftrain$inqlast6mths)
-loans_dftrain$logrevolbal <- normalize(loans_dftrain$logrevolbal)
-loans_dftrain$revolutil <- normalize(loans_dftrain$revolutil)
-loans_dftrain$totalacc<- normalize(loans_dftrain$totalacc)
-loans_dftrain$logannualinc<- normalize(loans_dftrain$logannualinc)
-loans_dftrain$ratioacc<- normalize(loans_dftrain$ratioacc)
-
-# # use caret to downsample the train dataset
+# use caret to downsample the train dataset
 loans_dftrainNNDN = downSample(loans_dftrainNN, y = as.factor(loans_dftrainNN$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainNNDN)
 
@@ -415,9 +403,9 @@ set.seed(123)
 st = Sys.time() 
 nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
-                 tuneGrid=expand.grid(.size=seq(1, 11, by = 2),.decay=c(0,0.001,0.1))) 
+                 tuneGrid=expand.grid(.size=seq(1, 10, by = 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
-#a 27-7-1 network with 204 weights
+#a 27-1-1 network with 30 weights 
 
 # show neural network result
 nnmodel[["finalModel"]]
@@ -434,44 +422,39 @@ my_datatrain <- subset(loans_dftrainNNDN, select = -c(targetloanstatus))
 predictNN_train_cm <- predict(nnmodel, my_datatrain, type = "raw")
 
 confusionMatrix(data = predictNN_train_cm, reference = loans_dftrainNNDN$targetloanstatus)
-# Accuracy = 64.47%
+# Accuracy = 64.04%
 
 # use confusion matrix to evaluate model performance on test data.
 
 # data preparation
-tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftest, select = creditpolicy))
-tempdata2 <- model.matrix(~term-1, subset(loans_dftest, select = term))
-tempdata3 <- model.matrix(~delin2years-1, subset(loans_dftest, select = delin2years))
-tempdata4 <- model.matrix(~homeowner-1, subset(loans_dftest, select = homeowner))
-tempdata5 <- model.matrix(~verified-1, subset(loans_dftest, select = verified))
-tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftest, select = purpose_mod))
 
-loans_dftestNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
-                              subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
+# normalising numerical variables
+z = loans_dftest$targetloanstatus
+preProcess_range_model_test <- preProcess(loans_dftest, method='range')
+loans_dftest=  predict(preProcess_range_model_test, newdata = loans_dftest)
+apply(loans_dftest[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
 
-loans_dftest$loanamnt <- normalize(loans_dftest$loanamnt)
-loans_dftest$intrate <- normalize(loans_dftest$intrate)
-loans_dftest$emplength <- normalize(loans_dftest$emplength)
-loans_dftest$dti <- normalize(loans_dftest$dti)
-loans_dftest$inqlast6mths <- normalize(loans_dftest$inqlast6mths)
-loans_dftest$logrevolbal <- normalize(loans_dftest$logrevolbal)
-loans_dftest$revolutil <- normalize(loans_dftest$revolutil)
-loans_dftest$totalacc<- normalize(loans_dftest$totalacc)
-loans_dftest$logannualinc<- normalize(loans_dftest$logannualinc)
-loans_dftest$ratioacc<- normalize(loans_dftest$ratioacc)
+# One-Hot Encoding
+# Creating dummy variables is converting a categorical variable to as many binary variables as here are categories.
+dummies_model = dummyVars(targetloanstatus ~ ., data=loans_dftest)
 
-my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
-predictNN_test_cm <- predict(nnmodel, my_data, type = "raw")
-predictNN_test <- predict(nnmodel, my_data, type = "prob")
+# Create the dummy variables using predict.
+loans_dftest_mat <- predict(dummies_model, newdata = loans_dftest)
+loans_dftestNN <- data.frame(loans_dftest_mat)
+loans_dftestNN$targetloanstatus = z
 
-predictNN_test = factor(predictNN_test)
+predictNN_test_cm <- predict(nnmodel, loans_dftestNN, type = "raw")
+predictNN_test <- predict(nnmodel, loans_dftestNN, type = "prob")
+
+# predictNN_test = factor(predictNN_test)
+
 confusionMatrix(data = predictNN_test_cm, reference = loans_dftestNN$targetloanstatus)
-# Accuracy = 61.95% which is comparable to the accuracy for training set
+# Accuracy = 57.41% 
 
 # show relative importance
 VarImp_nn = varImp(nnmodel)
 VarImp_nn %>% 
-  ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
+  ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = "Variable", y = "Relative Importance")
 
 #foreval = cbind(foreval,pvalue_NN = predictNN_test[,2]) #if need to tune parameters
 
