@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools,caret)
+=======
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools, caret)
+>>>>>>> cdb1d40413f61bb251dde11295296b5e298d38cc
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -251,3 +255,10 @@ combineprofits %>%
   geom_line(aes(color = factor(Model, levels = c("forest","glmbag","NN","random")))) + labs(title = "Profit charts with ranked caseload") +
   scale_color_manual(values = c("green4", "red3", "gold2", "black"),
                      name = "Model")
+
+colMax <- function(data) {
+  sapply(data, max, na.rm = TRUE)
+}
+
+colMax(combineprofits)
+colMax(combinelift)
