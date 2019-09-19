@@ -8,9 +8,6 @@ loans_df = read.csv("loansformodelling.csv",stringsAsFactors = TRUE)
 tofactor = c("targetloanstatus","creditpolicy","term")
 loans_df[,tofactor] = lapply(loans_df[,tofactor], as.factor)
 
-loans_pnl = read.csv("loansfortest.csv")
-loans_pnltest = loans_pnl[-inds,]
-
 # Sampling
 ##########
 #Create our training set using stratified sampling.
@@ -35,6 +32,12 @@ glimpse(loans_dftrainUP)
 # use caret to downsample the train dataset
 loans_dftrainDN = downSample(loans_dftrain, y = as.factor(loans_dftrain$targetloanstatus), list = TRUE)[[1]]
 glimpse(loans_dftrainDN)
+
+############
+
+# establish business metric for evaluation
+loans_pnl = read.csv("loansfortest.csv")
+loans_pnltest = loans_pnl[-inds,]
 
 ########
 
@@ -368,8 +371,12 @@ confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loan
 #Build the model.
 # foreval = read.csv("foreval.csv",as.is = TRUE) #if need to tune NN parameters
 # foreval = foreval %>% #if need to tune NN parameters
-#   select(-pvalue_NN) #if need to tune NN parameters
-summary(loans_dftrain)
+# select(-pvalue_NN) #if need to tune NN parameters
+
+normalize <- function(x)
+{
+  return((x- min(x)) /(max(x)-min(x)))
+}
 
 # data preparation for train dataset
 tempdata1 <- model.matrix(~creditpolicy-1, subset(loans_dftrain, select = creditpolicy))
@@ -382,16 +389,16 @@ tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose
 loans_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
                               subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
-loans_dftrain$loanamnt <- scale(loans_dftrain$loanamnt)
-loans_dftrain$intrate <- scale(loans_dftrain$intrate)
-loans_dftrain$emplength <- scale(loans_dftrain$emplength)
-loans_dftrain$dti <- scale(loans_dftrain$dti)
-loans_dftrain$inqlast6mths <- scale(loans_dftrain$inqlast6mths)
-loans_dftrain$revolbal <- scale(loans_dftrain$logrevolbal)
-loans_dftrain$revolutil <- scale(loans_dftrain$revolutil)
-loans_dftrain$totalacc<- scale(loans_dftrain$totalacc)
-loans_dftrain$logannualinc<- scale(loans_dftrain$logannualinc)
-loans_dftrain$ratioacc<- scale(loans_dftrain$ratioacc)
+loans_dftrain$loanamnt <- normalize(loans_dftrain$loanamnt)
+loans_dftrain$intrate <- normalize(loans_dftrain$intrate)
+loans_dftrain$emplength <- normalize(loans_dftrain$emplength)
+loans_dftrain$dti <- normalize(loans_dftrain$dti)
+loans_dftrain$inqlast6mths <- normalize(loans_dftrain$inqlast6mths)
+loans_dftrain$logrevolbal <- normalize(loans_dftrain$logrevolbal)
+loans_dftrain$revolutil <- normalize(loans_dftrain$revolutil)
+loans_dftrain$totalacc<- normalize(loans_dftrain$totalacc)
+loans_dftrain$logannualinc<- normalize(loans_dftrain$logannualinc)
+loans_dftrain$ratioacc<- normalize(loans_dftrain$ratioacc)
 
 # # use caret to downsample the train dataset
 loans_dftrainNNDN = downSample(loans_dftrainNN, y = as.factor(loans_dftrainNN$targetloanstatus), list = TRUE)[[1]]
@@ -408,7 +415,7 @@ set.seed(123)
 st = Sys.time() 
 nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
-                 tuneGrid=expand.grid(.size=seq(1, 14, by = 1),.decay=c(0,0.001,0.1))) 
+                 tuneGrid=expand.grid(.size=seq(1, 11, by = 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
 #a 27-7-1 network with 204 weights
 
@@ -427,7 +434,7 @@ my_datatrain <- subset(loans_dftrainNNDN, select = -c(targetloanstatus))
 predictNN_train_cm <- predict(nnmodel, my_datatrain, type = "raw")
 
 confusionMatrix(data = predictNN_train_cm, reference = loans_dftrainNNDN$targetloanstatus)
-# Accuracy = 64.59%
+# Accuracy = 64.47%
 
 # use confusion matrix to evaluate model performance on test data.
 
@@ -442,16 +449,16 @@ tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftest, select = purpose_
 loans_dftestNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
                               subset(loans_dftest, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
-loans_dftest$loanamnt <- scale(loans_dftest$loanamnt)
-loans_dftest$intrate <- scale(loans_dftest$intrate)
-loans_dftest$emplength <- scale(loans_dftest$emplength)
-loans_dftest$dti <- scale(loans_dftest$dti)
-loans_dftest$inqlast6mths <- scale(loans_dftest$inqlast6mths)
-loans_dftest$revolbal <- scale(loans_dftest$logrevolbal)
-loans_dftest$revolutil <- scale(loans_dftest$revolutil)
-loans_dftest$totalacc<- scale(loans_dftest$totalacc)
-loans_dftest$logannualinc<- scale(loans_dftest$logannualinc)
-loans_dftest$ratioacc<- scale(loans_dftest$ratioacc)
+loans_dftest$loanamnt <- normalize(loans_dftest$loanamnt)
+loans_dftest$intrate <- normalize(loans_dftest$intrate)
+loans_dftest$emplength <- normalize(loans_dftest$emplength)
+loans_dftest$dti <- normalize(loans_dftest$dti)
+loans_dftest$inqlast6mths <- normalize(loans_dftest$inqlast6mths)
+loans_dftest$logrevolbal <- normalize(loans_dftest$logrevolbal)
+loans_dftest$revolutil <- normalize(loans_dftest$revolutil)
+loans_dftest$totalacc<- normalize(loans_dftest$totalacc)
+loans_dftest$logannualinc<- normalize(loans_dftest$logannualinc)
+loans_dftest$ratioacc<- normalize(loans_dftest$ratioacc)
 
 my_data <- subset(loans_dftestNN, select = -c(targetloanstatus)) 
 predictNN_test_cm <- predict(nnmodel, my_data, type = "raw")
@@ -459,14 +466,12 @@ predictNN_test <- predict(nnmodel, my_data, type = "prob")
 
 predictNN_test = factor(predictNN_test)
 confusionMatrix(data = predictNN_test_cm, reference = loans_dftestNN$targetloanstatus)
-# Accuracy = 63.2% which is comparable to the accuracy for training set
+# Accuracy = 61.95% which is comparable to the accuracy for training set
 
 # show relative importance
 VarImp_nn = varImp(nnmodel)
 VarImp_nn %>% 
   ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
-
-predictNN_test_roc <- predict(nnmodel, my_data, type = "prob")
 
 #foreval = cbind(foreval,pvalue_NN = predictNN_test[,2]) #if need to tune parameters
 
