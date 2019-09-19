@@ -232,7 +232,7 @@ combineprofits %>%
   select(caseload, random, glm, glmbag, boostlinear, pca) %>%
   gather(key = Model, value = value, -caseload) %>% 
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = factor(Model, levels = c("glmbag","glm","pca","boostlinear","random")))) + labs(title = "Lift charts with ranked caseload") +
+  geom_line(aes(color = factor(Model, levels = c("glmbag","glm","pca","boostlinear","random")))) + labs(title = "Profit charts with ranked caseload") +
   scale_color_manual(values = c("red3", "orchid2", "mediumpurple", "darkgoldenrod", "black"),
                      name = "Model")
 
@@ -240,7 +240,7 @@ combineprofits %>%
   select(caseload, random, tree, forest, boosttree) %>%
   gather(key = Model, value = value, -caseload) %>%
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = factor(Model, levels = c("forest","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
+  geom_line(aes(color = factor(Model, levels = c("forest","boosttree","tree","random")))) + labs(title = "Profit charts with ranked caseload") +
   scale_color_manual(values = c("green4", "cyan", "yellowgreen", "black"),
                      name = "Model")
 
@@ -248,6 +248,6 @@ combineprofits %>%
   select(caseload, random, forest, glmbag, NN) %>%
   gather(key = Model, value = value, -caseload) %>%
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = factor(Model, levels = c("forest","glmbag","NN","random")))) + labs(title = "Lift charts with ranked caseload") +
+  geom_line(aes(color = factor(Model, levels = c("forest","glmbag","NN","random")))) + labs(title = "Profit charts with ranked caseload") +
   scale_color_manual(values = c("green4", "red3", "gold2", "black"),
                      name = "Model")

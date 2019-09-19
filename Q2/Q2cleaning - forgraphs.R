@@ -246,9 +246,9 @@ loans[,c("creditpolicy", "grade", "homeownership", "verificationstatus","targetl
 
 #Mutate some business variables for model evaluation in the end. LC states a 5% upfront fee.
 loans = loans %>%
-  mutate(potl_profit = installment*term - as.double(loanamnt),
+  mutate(potl_profit = intrate*loanamnt + 0.05*loanamnt,
          loss = case_when(targetloanstatus == 0 ~ 0,
-                          targetloanstatus == 1 ~ as.double(loanamnt)),
+                          targetloanstatus == 1 ~ 0.95*as.double(loanamnt)),
          profit = case_when(loss == 0 ~ potl_profit,
                             loss != 0 ~ 0))
 
@@ -257,6 +257,14 @@ loans %>%
   summarize(sum = sum(potl_profit)) %>%
   ungroup() %>%
   mutate(perc = sum/sum(sum))
+
+loans %>%
+  summarize(Revenue = sum(profit), Losses = sum(loss), Profit = Revenue - Losses) %>%
+  gather(Metrics, Value) %>% ggplot(aes(x = factor(Metrics, levels = c("Revenue","Losses","Profit")), y = Value)) +
+  geom_col(aes(fill = factor(Metrics)), show.legend = F) +
+  geom_text(aes(label = round(Value)), position = position_dodge(0.9), vjust = c(2,2,-2.5)) +
+  scale_fill_manual(values = c("Red","Pink","green4")) + 
+  labs(title = "Business Metrics for LC", x = "Metrics")
 
 # Selecting Features for Modelling
 loans_df = select(loans, -c("id","homeownership","annualinc","revolbal","verificationstatus","delinq2yrs", "purpose", "profit", "loss", "potl_profit","openacc"))
