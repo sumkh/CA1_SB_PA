@@ -1,4 +1,4 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR,xgboost)
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -104,14 +104,9 @@ loans_dfglm <- glm(formula = targetloanstatus ~ .,
 summary(loans_dfglm)
 
 # check for multi-collinearity
-vif(loans_dfglm)
-# vif >10  for intrate indicating presence of multi-collinearity (grade is a categorical variable and vif is not applicable).  
-# from earlier box plot, we observed a relationship between intrate and grade. we remove grade from the model and rerun the model
 
-loans_dfglm <- glm(formula = update.formula(loans_dfglm, ~ . -grade),
-                   family=binomial,  data=loans_dftrain)
-summary(loans_dfglm)
 vif(loans_dfglm)
+
 # vif < 3 for all variables
 
 # Refine model/Use step function, step function tries to optimize a glm model by automatically adding/dropping relevant independent variables.
@@ -369,11 +364,9 @@ varimp_rf %>%
   ggplot(aes(x = names, y = importance))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
 
 ########
-
-# Boosting
+# Tree Extreme Gradient Boosting
 ########
 
-library(xgboost)
 train_x = data.matrix(loans_dftrainDN[,-6])
 train_y = loans_dftrainDN[,6]
 train_y = ifelse(train_y=="1","1","0")
@@ -388,26 +381,14 @@ params_tree <- list(booster = "gbtree",
                     eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1,
                     objective = "binary:logistic")
 
-params_linear = list(booster = "gblinear",
-                     feature_selector = "cyclic", lambda = 0, alpha = 0,
-                     objective = "binary:logistic")
-
 # try xgboost cross validation
 xgbcv_tree = xgb.cv(data = xgb_train, 
                     params = params_tree, nrounds = 100, nfold = 5, 
                     showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
 
-xgbcv_linear = xgb.cv(data = xgb_train, 
-                      params = params_linear, nrounds = 100, nfold = 5, 
-                      showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
-
 # identify iteration with lowest error for xgb tree
 which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]]))
 which.min((xgbcv_tree[["evaluation_log"]][["test_error_mean"]]))
-
-# identify iteration with lowest error for xgb linear
-which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]]))
-which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]]))
 
 xgbc_tree <- xgb.train(data = xgb_train, 
                        params = params_tree, nfold = 5, nrounds = which.min((xgbcv_tree[["evaluation_log"]][["train_error_mean"]])), 
@@ -427,16 +408,6 @@ x2_dn_tree = predict(xgbc_tree, xgb_test, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_tree>0.5)), reference = loans_dftest$targetloanstatus)
 # accuracy = 62.43% for test set
 
-#update the eval dataframe.
-foreval = cbind(foreval, pvalue_glm = pdataglm_test,
-                pvalue_bag = pdataglmbag_test,
-                pvalue_tree=pdata_tree[,2], 
-                pvalue_forest=pdatarf_test[,2],
-                pvalue_boosttree=x2_dn_tree,
-                pvalue_boostlinear=x2_dn_linear,
-                pvalue_pca=pdataPCA_glm)
-write.csv(foreval, "foreval.csv", row.names = F)
-
 prroc_xgbtree = pnl(x2_dn_tree, loans_dftest$targetloanstatus)
 
 #plot PR curve
@@ -450,6 +421,24 @@ prroc_xgbtree %>%
   ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
   geom_line() + scale_color_gradientn(colours = rainbow(3)) +
   annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_xgbtree$fpr, prroc_xgbtree$Recall, method = "spline"),3)))
+
+########
+# Linear Extreme Gradient Boosting
+########
+
+params_linear = list(booster = "gblinear",
+                     feature_selector = "cyclic", lambda = 0, alpha = 0,
+                     objective = "binary:logistic")
+
+# try xgboost cross validation
+xgbcv_linear = xgb.cv(data = xgb_train, 
+                      params = params_linear, nrounds = 100, nfold = 5, 
+                      showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
+
+# identify iteration with lowest error for xgb linear
+which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]]))
+which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]]))
+
 
 xgbc_linear <- xgb.train(data = xgb_train, 
                          params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]])), 
