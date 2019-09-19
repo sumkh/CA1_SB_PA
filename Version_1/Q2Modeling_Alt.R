@@ -382,7 +382,33 @@ tempdata6 <- model.matrix(~purpose_mod-1, subset(loans_dftrain, select = purpose
 loans_dftrainNN <- data.frame(tempdata1, tempdata2, tempdata3, tempdata4, tempdata5, tempdata6,
                               subset(loans_dftrain, select=c(loanamnt, intrate, emplength, dti, inqlast6mths,logrevolbal, revolutil, totalacc, logannualinc, ratioacc, targetloanstatus)))
 
-loans_dftrain$loanamnt <- scale(loans_dftrain$loanamnt)
+#loans_dftrain$loanamnt <- scale(loans_dftrain$loanamnt)
+summary(loans_dftrain$loanamnt)
+glimpse(loans_dftrain)
+summary(loans_dftrain)
+
+#----------------------------------------------------------------------------#
+y = loans_dftrain$targetloanstatus
+preProcess_range_model <- preProcess(loans_dftrain, method='range')
+loans_dftrain <- predict(preProcess_range_model, newdata = loans_dftrain)
+apply(loans_dftrain[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
+
+# One-Hot Encoding
+# Creating dummy variables is converting a categorical variable to as many binary variables as here are categories.
+dummies_model <- dummyVars(targetloanstatus ~ ., data=loans_dftrain)
+
+# Create the dummy variables using predict. The Y variable (Purchase) will not be present in trainData_mat.
+loans_dftrain_mat <- predict(dummies_model, newdata = loans_dftrain)
+
+loans_dftrainNN <- data.frame(loans_dftrain_mat)
+loans_dftrainNN$targetloanstatus = y
+
+glimpse(loans_dftrainNN)
+#----------------------------------------------------------------------------#
+
+
+
+# Append the Y variable
 loans_dftrain$intrate <- scale(loans_dftrain$intrate)
 loans_dftrain$emplength <- scale(loans_dftrain$emplength)
 loans_dftrain$dti <- scale(loans_dftrain$dti)
@@ -408,13 +434,16 @@ set.seed(123)
 st = Sys.time() 
 nnmodel <- train(f, loans_dftrainNNDN, method='nnet', trace = FALSE,
                  #Grid of tuning parameters to try:
-                 tuneGrid=expand.grid(.size=seq(1, 14, by = 1),.decay=c(0,0.001,0.1))) 
+                 tuneGrid=expand.grid(.size=seq(1, 11, by = 2),.decay=c(0,0.001,0.1))) 
 Sys.time() - st
 #a 27-7-1 network with 204 weights
 
 # show neural network result
 nnmodel[["finalModel"]]
 plot(nnmodel)
+
+varImp(nnmodel)
+
 
 # save model in rds format (to save time rerunning model)
 saveRDS(nnmodel, file = "neuralnetmodel.rds")
