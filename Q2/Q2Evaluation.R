@@ -77,29 +77,77 @@ prroc_boostlinear = prroc(foreval$pvalue_boostlinear, foreval$targetloanstatus)
 prroc_pca = prroc(foreval$pvalue_pca, foreval$targetloanstatus)
 prroc_NN = prroc(foreval$pvalue_NN, foreval$targetloanstatus)
 
-# plot PR curve
-prroc_glm %>%
-  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "PR Curve for glm model") +
-  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
+combinerecall = data.frame(threshold = prroc_glm$Threshold,
+                           glm = prroc_glm$Recall,
+                           glmbag = prroc_bag$Recall,
+                           tree = prroc_tree$Recall,
+                           forest = prroc_forest$Recall,
+                           boosttree = prroc_boosttree$Recall,
+                           boostlinear = prroc_boostlinear$Recall,
+                           pca = prroc_pca$Recall,
+                           NN = prroc_NN$Recall)
+
+combineprecision = data.frame(threshold = prroc_glm$Threshold,
+                              glm = prroc_glm$Precision,
+                              glmbag = prroc_bag$Precision,
+                              tree = prroc_tree$Precision,
+                              forest = prroc_forest$Precision,
+                              boosttree = prroc_boosttree$Precision,
+                              boostlinear = prroc_boostlinear$Precision,
+                              pca = prroc_pca$Precision,
+                              NN = prroc_NN$Precision)
+
+combinefpr = data.frame(threshold = prroc_glm$Threshold,
+                        glm = prroc_glm$fpr,
+                        glmbag = prroc_bag$fpr,
+                        tree = prroc_tree$fpr,
+                        forest = prroc_forest$fpr,
+                        boosttree = prroc_boosttree$fpr,
+                        boostlinear = prroc_boostlinear$fpr,
+                        pca = prroc_pca$fpr,
+                        NN = prroc_NN$fpr)
+
+# plot PR curves
+cbind(combinerecall %>%
+        gather(key = Model, value = Recall, -threshold),
+      combineprecision %>%
+        gather(key = Model, value = Precision, -threshold) %>%
+        select(Precision)) %>%
+  ggplot(aes(x = Recall, y = Precision, color = Model)) +
+  geom_line() + 
+  scale_color_brewer(palette = "Dark2") + 
+  labs(title = "PR Curves")
+
+#Compute AUC
+cbind(combinerecall %>%
+        gather(key = Model, value = Recall, -threshold),
+      combineprecision %>%
+        gather(key = Model, value = Precision, -threshold) %>%
+        select(Precision)) %>%
+  filter(Model == "glm") -> mydf
+#Change above model to compute AUC
+AUC(mydf$Recall, mydf$Precision, method = "spline")
 
 # plot ROC curve
-prroc_glm %>%
-  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "ROC Curve for glm model") +
-  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
+cbind(combinefpr %>%
+        gather(key = Model, value = fpr, -threshold),
+      combinerecall %>%
+        gather(key = Model, value = Recall, -threshold) %>%
+        select(Recall)) %>%
+  ggplot(aes(x = fpr, y = Recall, color = Model)) +
+  geom_line() + 
+  scale_color_brewer(palette = "Dark2") + 
+  labs(title = "ROC curves")
 
-# plot PR curve
-prroc_forest %>%
-  ggplot(aes(x = Recall, y = Precision, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "PR Curve for forest model") +
-  annotate("text", x = 0.6, y = 0.88, label = str_c("AUC = ", round(AUC(prroc_glm$Recall, prroc_glm$Precision, method = "spline"),3)))
-
-# plot ROC curve
-prroc_forest %>%
-  ggplot(aes(x = fpr, y = Recall, color = Threshold)) +
-  geom_line() + scale_color_gradientn(colours = rainbow(3)) + labs(title = "ROC Curve for forest model") +
-  annotate("text", x = 0.6, y = 0.5, label = str_c("AUC = ", round(AUC(prroc_glm$fpr, prroc_glm$Recall, method = "spline"),3)))
+#Compute AUC
+cbind(combinefpr %>%
+        gather(key = Model, value = fpr, -threshold),
+      combinerecall %>%
+        gather(key = Model, value = Recall, -threshold) %>%
+        select(Recall)) %>%
+  filter(Model == "glm") -> mydf2
+#Change above model to compute AUC
+AUC(mydf2$fpr, mydf2$Recall, method = "spline")
 
 ########
 # evaluating lift curves
@@ -134,15 +182,23 @@ combinelift %>%
   gather(key = Model, value = value, -caseload) %>% 
   ggplot(aes(x = caseload, y = value)) + 
   geom_line(aes(color = factor(Model, levels = c("glmbag","glm","pca","boostlinear","random")))) + labs(title = "Lift charts with ranked caseload") +
-  scale_color_manual(values = c("mediumpurple", "orchid2", "red3", "darkgoldenrod", "black"),
+  scale_color_manual(values = c("red3", "orchid2", "mediumpurple", "darkgoldenrod", "black"),
                      name = "Model")
 
 combinelift %>%
-  select(caseload, random, tree, forest, boosttree, NN) %>%
+  select(caseload, random, tree, forest, boosttree) %>%
   gather(key = Model, value = value, -caseload) %>%
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = factor(Model, levels = c("forest","NN","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
-  scale_color_manual(values = c("dodgerblue4", "darkgreen", "cyan", "yellowgreen", "black"),
+  geom_line(aes(color = factor(Model, levels = c("forest","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("green4", "cyan", "yellowgreen", "black"),
+                     name = "Model")
+
+combinelift %>%
+  select(caseload, random, forest, glmbag, NN) %>%
+  gather(key = Model, value = value, -caseload) %>%
+  ggplot(aes(x = caseload, y = value)) + 
+  geom_line(aes(color = factor(Model, levels = c("forest","glmbag","NN","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("green4", "red3", "gold2", "black"),
                      name = "Model")
 
 ########
@@ -177,13 +233,21 @@ combineprofits %>%
   gather(key = Model, value = value, -caseload) %>% 
   ggplot(aes(x = caseload, y = value)) + 
   geom_line(aes(color = factor(Model, levels = c("glmbag","glm","pca","boostlinear","random")))) + labs(title = "Lift charts with ranked caseload") +
-  scale_color_manual(values = c("mediumpurple", "orchid2", "red3", "darkgoldenrod", "black"),
+  scale_color_manual(values = c("red3", "orchid2", "mediumpurple", "darkgoldenrod", "black"),
                      name = "Model")
 
 combineprofits %>%
-  select(caseload, random, tree, forest, boosttree, NN) %>%
+  select(caseload, random, tree, forest, boosttree) %>%
   gather(key = Model, value = value, -caseload) %>%
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = factor(Model, levels = c("forest","NN","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
-  scale_color_manual(values = c("dodgerblue4", "darkgreen", "cyan", "yellowgreen", "black"),
+  geom_line(aes(color = factor(Model, levels = c("forest","boosttree","tree","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("green4", "cyan", "yellowgreen", "black"),
+                     name = "Model")
+
+combineprofits %>%
+  select(caseload, random, forest, glmbag, NN) %>%
+  gather(key = Model, value = value, -caseload) %>%
+  ggplot(aes(x = caseload, y = value)) + 
+  geom_line(aes(color = factor(Model, levels = c("forest","glmbag","NN","random")))) + labs(title = "Lift charts with ranked caseload") +
+  scale_color_manual(values = c("green4", "red3", "gold2", "black"),
                      name = "Model")
