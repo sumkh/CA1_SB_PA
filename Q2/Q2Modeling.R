@@ -1,4 +1,5 @@
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR,xgboost,rpart,rattle,nnet,randomForest)
+pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, car, caret, ggpubr, DescTools, ROCR,
+               xgboost, rpart, rattle, nnet, randomForest)
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -85,13 +86,11 @@ confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = lo
 # accuracy of trainset is 84.8%
 
 # show variable importance
-VarImp_glm = as.data.frame(varImp(loans_dfglm3))
-VarImp_glm =  data.frame(
-  names   = rownames(VarImp_glm), overall = VarImp_glm$Overall)
-VarImp_glm$names <- factor(VarImp_glm$names, levels = VarImp_glm$names[order(VarImp_glm$overall)])
-
+VarImp_glm = as.data.frame(varImp(loans_dfglm3)) %>%
+  rownames_to_column("Variable")
 VarImp_glm %>% 
-  ggplot(aes(x = names, y = overall))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
+  ggplot(aes(x = reorder(Variable, Overall), y = Overall))+ geom_col() + 
+  coord_flip() + labs(title = "Relative Importance of Variables for glm", x = 'Variable', y = 'Relative Importance')
 
 # Perform prediction on testset and look at confusion matrix.
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
@@ -113,6 +112,18 @@ confusionMatrix(data = as.factor(as.numeric(pdataglmbag_train>0.5)), reference =
 pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "mean")
 confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus)
 # Accuracy on test set is 84.9%
+
+#Variable Importance for glmbag
+VarImp_glmbag = lapply(loans_dfglmbag,varImp)
+VarImp_glmbag = do.call(cbind,VarImp_glmbag)
+VarImp_glmbag = apply(VarImp_glmbag,1,mean)
+VarImp_glmbag = as.data.frame(VarImp_glmbag) %>%
+  `colnames<-`("Overall") %>%
+  rownames_to_column("Variable")
+
+VarImp_glmbag %>% 
+  ggplot(aes(x = reorder(Variable, Overall), y = Overall))+ geom_col() + 
+  coord_flip() + labs(title = "Relative Importance of Variables for glmbag", x = 'Variable', y = 'Relative Importance')
 
 ########
 
@@ -213,14 +224,13 @@ confusionMatrix(data = pdatarf_test_cm, reference = loans_dftest$targetloanstatu
 # accuracy of test set is 64.87%
 pdatarf_test= predict(rf_dn, newdata = loans_dftest, type = "prob")
 
-varimp_rf = as.data.frame(varImp(rf_dn))
-colnames(varimp_rf) = c("importance","importance2")
+varimp_rf = as.data.frame(varImp(rf_dn)) %>%
+  `colnames<-`(c("importance","importance2")) %>%
+   select(-importance2) %>%
+  rownames_to_column("Variable")
 varimp_rf %>%
-  select(-importance2)
-varimp_rf = data.frame(names=rownames(varimp_rf),importance=varimp_rf$importance)
-varimp_rf$names <- factor(varimp_rf$names, levels = varimp_rf$names[order(varimp_rf$importance)])
-varimp_rf %>%
-  ggplot(aes(x = names, y = importance))+ geom_bar(stat ='identity') + coord_flip() + labs(title = "Relative Importance of Variables", x = 'Variable', y = 'Relative Importance')
+  ggplot(aes(x = reorder(Variable, importance), y = importance))+ geom_col() + 
+  coord_flip() + labs(title = "Relative Importance of Variables for Random Forest", x = 'Variable', y = 'Relative Importance')
 
 ########
 # Tree Extreme Gradient Boosting
@@ -317,7 +327,7 @@ nrow(loans_dftrain_dummy)
 prin_comp <- prcomp(loans_dftrain_dummy, scale. = T)
 names(prin_comp)
 
-prin_comp$rotation
+princomps_var = as.data.frame(prin_comp$rotation)
 dim(prin_comp$x)
 
 # plot the resultant principal components.
@@ -363,6 +373,25 @@ confusionMatrix(data = as.factor(as.numeric(pdataPCA_trainglm>0.5)), reference =
 pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
 confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loans_dftest$targetloanstatus)
 # accuracy of 84.93% for test set which is comparable to accuracy for training set
+
+VarImp_pca = as.data.frame(varImp(PCAmodel_glm)) %>%
+  rownames_to_column("Variable")
+VarImp_pca %>% 
+  ggplot(aes(x = reorder(Variable, Overall), y = Overall))+ geom_col() + 
+  coord_flip() + labs(title = "Relative Importance of Variables for pca_glm", x = 'Variable', y = 'Relative Importance')
+
+princomps_var = t(princomps_var[,1:15])
+VarImp_pca = princomps_var*VarImp_pca$Overall
+VarImp_pca = apply(abs(VarImp_pca),2,sum)
+
+VarImp_pca = as.data.frame(VarImp_pca) %>%
+  `colnames<-`("Overall") %>%
+  rownames_to_column("Variable")
+VarImp_pca = VarImp_pca[-c(1,4,12,15,19),]
+
+VarImp_pca %>% 
+  ggplot(aes(x = reorder(Variable, Overall), y = Overall))+ geom_col() + 
+  coord_flip() + labs(title = "Relative Importance of Variables for pca", x = 'Variable', y = 'Relative Importance')
 
 # Build a neural network model using the caret and nnet package.
 ########
