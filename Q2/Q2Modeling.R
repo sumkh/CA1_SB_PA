@@ -104,14 +104,9 @@ loans_dfglm <- glm(formula = targetloanstatus ~ .,
 summary(loans_dfglm)
 
 # check for multi-collinearity
-vif(loans_dfglm)
-# vif >10  for intrate indicating presence of multi-collinearity (grade is a categorical variable and vif is not applicable).  
-# from earlier box plot, we observed a relationship between intrate and grade. we remove grade from the model and rerun the model
 
-loans_dfglm <- glm(formula = update.formula(loans_dfglm, ~ . -grade),
-                   family=binomial,  data=loans_dftrain)
-summary(loans_dfglm)
 vif(loans_dfglm)
+
 # vif < 3 for all variables
 
 # Refine model/Use step function, step function tries to optimize a glm model by automatically adding/dropping relevant independent variables.
