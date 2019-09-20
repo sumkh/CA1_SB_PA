@@ -251,6 +251,7 @@ params_tree <- list(booster = "gbtree",
                     objective = "binary:logistic")
 
 # try xgboost cross validation
+set.seed(123)
 xgbcv_tree = xgb.cv(data = xgb_train, 
                     params = params_tree, nrounds = 100, nfold = 5, 
                     showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
@@ -265,7 +266,7 @@ xgbc_tree <- xgb.train(data = xgb_train,
 
 mat_tree = xgb.importance(model=xgbc_tree)
 
-xgb.plot.importance(importance_matrix = mat_tree[1:20]) 
+xgb.plot.importance(importance_matrix = mat_tree[1:20],main="Relative Importance for xGboost Trees",cex=1,xlim=c(0,0.2)) 
 
 # test on trainset and check confusion matrix
 x2_dn_traintree = predict(xgbc_tree, xgb_train, type="prob")
@@ -280,12 +281,16 @@ confusionMatrix(data = as.factor(as.numeric(x2_dn_tree>0.5)), reference = loans_
 ########
 # Linear Extreme Gradient Boosting
 ########
+ #foreval = read.csv("foreval.csv",as.is = TRUE) #if need to tune linear boost parameters
+ #foreval = foreval %>% #if need to tune linear boost parameters
+ #select(-pvalue_boostlinear) #if need to tune linear boost parameters
 
 params_linear = list(booster = "gblinear",
-                     feature_selector = "cyclic", lambda = 0, alpha = 0,
+                     feature_selector = "shuffle", lambda = 1, alpha = 0,
                      objective = "binary:logistic")
 
 # try xgboost cross validation
+set.seed(123)
 xgbcv_linear = xgb.cv(data = xgb_train, 
                       params = params_linear, nrounds = 100, nfold = 5, 
                       showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
@@ -297,21 +302,22 @@ which.min((xgbcv_linear[["evaluation_log"]][["test_error_mean"]]))
 set.seed(123)
 xgbc_linear <- xgb.train(data = xgb_train, 
                          params = params_linear, nfold = 5, nrounds = which.min((xgbcv_linear[["evaluation_log"]][["train_error_mean"]])), 
-                         verbose = FALSE, eval_metric = 'auc')
+                         verbose = FALSE)
 
 # test on trainset and check confusion matrix
 x2_dn_trainlinear = predict(xgbc_linear, xgb_train, type="prob")
-confusionMatrix(data = as.factor(as.numeric(x2_dn_trainlinear>0.5)), reference = loans_dftrainDN$targetloanstatus)
-# accuracy = 62.49% for training set
+confusionMatrix(data = as.factor(as.numeric(x2_dn_trainlinear>0.5)), reference = loans_dftrainDN$targetloanstatus,positive="1")
+# accuracy = 58.54% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
-confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loans_dftest$targetloanstatus)
-# accuracy = 65.22% for test set
+confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loans_dftest$targetloanstatus,positive="1")
+# accuracy = 59.3% for test set
 
 mat_linear = xgb.importance(model=xgbc_linear)
-xgb.plot.importance(importance_matrix = mat_linear[1:20]) #think need to change lambda and alpha(line 274) which are for normalizing
+xgb.plot.importance(importance_matrix = mat_linear[1:20],main="Relative Importance of xGboost Linear",cex=1) 
 
+#foreval = cbind(foreval,pvalue_boostlinear = x2_dn_linear) #if need to tune parameters
 ########
 
 # PCA
