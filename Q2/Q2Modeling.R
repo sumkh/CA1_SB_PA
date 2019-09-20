@@ -168,12 +168,19 @@ loans_dfrpart[["variable.importance"]]
 # test model on trainset and check accuracy with confusion matrix.
 pdata_traintree = predict(loans_dfrpart, loans_dftrainDN, type = "class")
 confusionMatrix(pdata_traintree, reference = loans_dftrainDN$targetloanstatus)
-# accuracy of trainset is 63.8%
+# accuracy of trainset is 62.4%
 
 # Perform prediction on testset and look at confusion matrix.
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "class")
 confusionMatrix(pdata_tree, reference = loans_dftest$targetloanstatus)
-# accuracy of trainset is 61.82% which is comparable to our training set
+# accuracy of trainset is 55.24% 
+
+varimp_tree = as.data.frame(varImp(loans_dfrpart)) %>%
+  `colnames<-`(c("importance")) %>%
+  rownames_to_column("Variable")
+varimp_tree %>%
+  ggplot(aes(x = reorder(Variable, importance), y = importance))+ geom_col() + 
+  coord_flip() + labs(title = "Relative Importance of Variables for Decision Tree", x = 'Variable', y = 'Relative Importance')
 
 # get probabilities for ROC curve
 pdata_tree = predict(loans_dfrpart, loans_dftest, type = "prob")
