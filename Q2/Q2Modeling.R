@@ -292,6 +292,26 @@ confusionMatrix(data = as.factor(as.numeric(x2_dn_tree>0.5)), reference = loans_
  #foreval = foreval %>% #if need to tune linear boost parameters
  #select(-pvalue_boostlinear) #if need to tune linear boost parameters
 
+y = loans_dftrain$targetloanstatus
+preProcess_range_model <- preProcess(loans_dftrain, method='scale')
+loans_dftrainBL =  predict(preProcess_range_model, newdata = loans_dftrain)
+apply(loans_dftrainBL[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
+loans_dftrainBLDN = downSample(loans_dftrainBL, y = as.factor(loans_dftrainBL$targetloanstatus), list = TRUE)[[1]]
+
+preProcess_range_model_test <- preProcess(loans_dftest, method='scale')
+loans_dftestBL=  predict(preProcess_range_model_test, newdata = loans_dftest)
+apply(loans_dftestBL[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
+
+trainBL_x = data.matrix(loans_dftrainBLDN[,-6])
+trainBL_y = loans_dftrainBLDN[,6]
+trainBL_y = ifelse(trainBL_y=="1","1","0")
+testBL_x = data.matrix(loans_dftestBL[,-6])
+testBL_y = loans_dftestBL[,6]
+testBL_y = ifelse(testBL_y=="1","1","0")
+
+xgb_train = xgb.DMatrix(data=trainBL_x, label=trainBL_y)
+xgb_test = xgb.DMatrix(data=testBL_x, label=testBL_y)
+
 params_linear = list(booster = "gblinear",
                      feature_selector = "shuffle", lambda = 1, alpha = 0,
                      objective = "binary:logistic")
@@ -314,12 +334,12 @@ xgbc_linear <- xgb.train(data = xgb_train,
 # test on trainset and check confusion matrix
 x2_dn_trainlinear = predict(xgbc_linear, xgb_train, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_trainlinear>0.5)), reference = loans_dftrainDN$targetloanstatus,positive="1")
-# accuracy = 58.54% for training set
+# accuracy = 62.31% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loans_dftest$targetloanstatus,positive="1")
-# accuracy = 59.3% for test set
+# accuracy = 63.39% for test set
 
 mat_linear = xgb.importance(model=xgbc_linear)
 xgb.plot.importance(importance_matrix = mat_linear[1:20],main="Relative Importance of xGboost Linear",cex=1) 
