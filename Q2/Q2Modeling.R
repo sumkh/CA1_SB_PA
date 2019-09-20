@@ -399,12 +399,12 @@ PCAmodel_glm = glm(targetloanstatus ~.,
 
 # test on training set
 pdataPCA_trainglm = predict(PCAmodel_glm, newdata = PCAtraindata, type = "response")
-confusionMatrix(data = as.factor(as.numeric(pdataPCA_trainglm>0.5)), reference = loans_dftrain$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataPCA_trainglm>0.5)), reference = loans_dftrain$targetloanstatus,positive="1")
 # accuracy of 84.82% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 pdataPCA_glm = predict(PCAmodel_glm, newdata = PCAtestdata, type = "response")
-confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loans_dftest$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataPCA_glm>0.5)), reference = loans_dftest$targetloanstatus,positive="1")
 # accuracy of 84.93% for test set which is comparable to accuracy for training set
 
 VarImp_pca = as.data.frame(varImp(PCAmodel_glm)) %>%
@@ -510,7 +510,7 @@ predictNN_test <- predict(nnmodel, loans_dftestNN, type = "prob")
 
 # predictNN_test = factor(predictNN_test)
 
-confusionMatrix(data = predictNN_test_cm, reference = loans_dftestNN$targetloanstatus)
+confusionMatrix(data = predictNN_test_cm, reference = loans_dftestNN$targetloanstatus,positive="1")
 # Accuracy = 57.41% 
 
 # show relative importance
