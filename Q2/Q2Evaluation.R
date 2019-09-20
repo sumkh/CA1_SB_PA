@@ -24,7 +24,7 @@ prroc = function(predict, reference) {
                     F1 = numeric(),
                     fpr = numeric())
   for (i in thres) {
-    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
+    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference,positive="1")
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]
