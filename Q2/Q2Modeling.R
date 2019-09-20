@@ -82,7 +82,7 @@ vif(loans_dfglm3)
 pdataglm_train <- predict(loans_dfglm3, newdata = loans_dftrain, type = "response")
 
 #confusionmatrix (syntax: predicted result, actual results)
-confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrain$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglm_train>0.5)), reference = loans_dftrain$targetloanstatus, positive="1")
 # accuracy of trainset is 84.8%
 
 # show variable importance
@@ -96,7 +96,7 @@ VarImp_glm %>%
 pdataglm_test <- predict(loans_dfglm3, newdata = loans_dftest, type = "response")
 
 # confusionmatrix syntax: (predicted result (we set the threshold previously), actual results)
-confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglm_test>0.5)), reference = loans_dftest$targetloanstatus,positive="1")
 # accuracy of test set is 84.9% which is comparable to our training set
 
 # Try bagging glm model.
@@ -105,12 +105,12 @@ loans_dfglmbag = bagglm(loans_dfglm3, agg = 10)
 
 # test model on trainset and check accuracy with confusion matrix.
 pdataglmbag_train = predictbag(loans_dfglmbag,loans_dftrain, method = "mean")
-confusionMatrix(data = as.factor(as.numeric(pdataglmbag_train>0.5)), reference = loans_dftrain$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglmbag_train>0.5)), reference = loans_dftrain$targetloanstatus,positive="1")
 # Accuracy on test set is 84.9%
 
 # Perform prediction on testset and look at confusion matrix.
 pdataglmbag_test = predictbag(loans_dfglmbag,loans_dftest, method = "mean")
-confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus)
+confusionMatrix(data = as.factor(as.numeric(pdataglmbag_test>0.5)), reference = loans_dftest$targetloanstatus,positive="1")
 # Accuracy on test set is 84.9%
 
 #Variable Importance for glmbag
@@ -167,7 +167,7 @@ loans_dfrpart[["variable.importance"]]
 
 # test model on trainset and check accuracy with confusion matrix.
 pdata_traintree = predict(loans_dfrpart, loans_dftrainDN, type = "class")
-confusionMatrix(pdata_traintree, reference = loans_dftrainDN$targetloanstatus)
+confusionMatrix(pdata_traintree, reference = loans_dftrainDN$targetloanstatus,positive="1")
 # accuracy of trainset is 62.4%
 
 # Perform prediction on testset and look at confusion matrix.
@@ -273,7 +273,7 @@ xgbc_tree <- xgb.train(data = xgb_train,
 
 mat_tree = xgb.importance(model=xgbc_tree)
 
-xgb.plot.importance(importance_matrix = mat_tree[1:20],main="Relative Importance for xGboost Trees",cex=1,xlim=c(0,0.2)) 
+xgb.plot.importance(importance_matrix = mat_tree[1:20],main="Relative Importance for XGboost Trees",cex=1,xlim=c(0,0.2)) 
 
 # test on trainset and check confusion matrix
 x2_dn_traintree = predict(xgbc_tree, xgb_train, type="prob")
@@ -293,12 +293,12 @@ confusionMatrix(data = as.factor(as.numeric(x2_dn_tree>0.5)), reference = loans_
  #select(-pvalue_boostlinear) #if need to tune linear boost parameters
 
 y = loans_dftrain$targetloanstatus
-preProcess_range_model <- preProcess(loans_dftrain, method='scale')
+preProcess_range_model <- preProcess(loans_dftrain, method=c('center','scale'))
 loans_dftrainBL =  predict(preProcess_range_model, newdata = loans_dftrain)
 apply(loans_dftrainBL[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
 loans_dftrainBLDN = downSample(loans_dftrainBL, y = as.factor(loans_dftrainBL$targetloanstatus), list = TRUE)[[1]]
 
-preProcess_range_model_test <- preProcess(loans_dftest, method='scale')
+preProcess_range_model_test <- preProcess(loans_dftest, method=c('center','scale'))
 loans_dftestBL=  predict(preProcess_range_model_test, newdata = loans_dftest)
 apply(loans_dftestBL[, 1:17], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
 
@@ -334,15 +334,15 @@ xgbc_linear <- xgb.train(data = xgb_train,
 # test on trainset and check confusion matrix
 x2_dn_trainlinear = predict(xgbc_linear, xgb_train, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_trainlinear>0.5)), reference = loans_dftrainDN$targetloanstatus,positive="1")
-# accuracy = 62.31% for training set
+# accuracy = 62.91% for training set
 
 # Perform prediction on testset and look at confusion matrix.
 x2_dn_linear = predict(xgbc_linear, xgb_test, type="prob")
 confusionMatrix(data = as.factor(as.numeric(x2_dn_linear>0.5)), reference = loans_dftest$targetloanstatus,positive="1")
-# accuracy = 63.39% for test set
+# accuracy = 62.98% for test set
 
 mat_linear = xgb.importance(model=xgbc_linear)
-xgb.plot.importance(importance_matrix = mat_linear[1:20],main="Relative Importance of xGboost Linear",cex=1) 
+xgb.plot.importance(importance_matrix = mat_linear[1:20],main="Coefficient XGboost Linear",cex=1) 
 
 #foreval = cbind(foreval,pvalue_boostlinear = x2_dn_linear) #if need to tune parameters
 ########
