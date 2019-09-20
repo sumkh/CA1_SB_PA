@@ -263,7 +263,7 @@ loans %>%
   gather(Metrics, Value) %>% ggplot(aes(x = factor(Metrics, levels = c("Revenue","Losses","Profit")), y = Value)) +
   geom_col(aes(fill = factor(Metrics)), show.legend = F) +
   geom_text(aes(label = round(Value)), position = position_dodge(0.9), vjust = c(2,2,-2.5)) +
-  scale_fill_manual(values = c("Red","Pink","green4")) + 
+  scale_fill_manual(values = c("Red","Red","green4")) + 
   labs(title = "Business Metrics for LC", x = "Metrics")
 
 # Selecting Features for Modelling

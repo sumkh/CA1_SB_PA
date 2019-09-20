@@ -1,8 +1,6 @@
-<<<<<<< HEAD
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools,caret)
-=======
+
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools, caret)
->>>>>>> cdb1d40413f61bb251dde11295296b5e298d38cc
+
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -26,7 +24,7 @@ prroc = function(predict, reference) {
                     F1 = numeric(),
                     fpr = numeric())
   for (i in thres) {
-    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference)
+    cm = confusionMatrix(data = as.factor(as.numeric(predict>i)), reference = reference,positive="1")
     precision = cm[["byClass"]][["Precision"]]
     recall = cm[["byClass"]][["Recall"]]
     f1 = cm[["byClass"]][["F1"]]

@@ -1,4 +1,4 @@
-pacman::p_load(data.table,forecast, tseries, fUnitRoots, tidyverse, fastDummies, lmtest, readxl, ggpubr, reshape2)
+pacman::p_load(data.table, forecast, tseries, tidyverse, lmtest, ggpubr, reshape2)
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
@@ -146,6 +146,9 @@ ets(training, model = "ZMM")
 ets(training, model = "ZMA")
 
 selectedmodels[[length(selectedmodels)+1]] <- fitets
+
+#Compare accuracy against test set.
+accuracy(predict(fitets, length(test)), test)
 
 # Plot forecast from ETS(A,A,A)
 autoplot(window(amtrakts, start = c(2010,1))) + labs(y="Ridership") +
