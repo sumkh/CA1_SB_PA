@@ -1,8 +1,6 @@
-<<<<<<< HEAD
-pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools,caret)
-=======
+
 pacman::p_load(dplyr, tidyverse, ggplot2, reshape2, ggpubr, DescTools, caret)
->>>>>>> cdb1d40413f61bb251dde11295296b5e298d38cc
+
 
 #set wd to this R file's current folder.
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
