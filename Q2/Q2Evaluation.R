@@ -196,10 +196,10 @@ combinelift %>%
                      name = "Model")
 
 combinelift %>%
-  select(caseload, random, forest, glmbag, NN) %>%
+  select(caseload, random, forest, glm, NN) %>%
   gather(key = Model, value = value, -caseload) %>%
   ggplot(aes(x = caseload, y = value)) + 
-  geom_line(aes(color = factor(Model, levels = c("forest","glmbag","NN","random")))) + labs(title = "Lift charts with ranked caseload") +
+  geom_line(aes(color = factor(Model, levels = c("forest","glm","NN","random")))) + labs(title = "Lift charts with ranked caseload") +
   scale_color_manual(values = c("green4", "red3", "gold2", "black"),
                      name = "Model")
 
