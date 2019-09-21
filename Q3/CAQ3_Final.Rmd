@@ -210,6 +210,9 @@ ets(training, model = "ZMM")
 
 selectedmodels[[length(selectedmodels)+1]] <- fitets
 
+#Compare accuracy against test set.
+accuracy(predict(fitets, length(test)), test)
+
 # Plot forecast from ETS(A,A,A)
 autoplot(window(amtrakts, start = c(2010,1))) + labs(y="Ridership") +
   autolayer(forecast(fitets,length(test)), PI = TRUE) +  
