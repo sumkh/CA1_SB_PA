@@ -137,7 +137,7 @@ loans = loans %>%
                                   grade == "E" ~ 5,
                                   grade == "F" ~ 6,
                                   grade == "G" ~ 7)))
-# Create 2 new variables for emp10years and delinq2ears
+# Create 2 new variables for emp10years and delinq2years
 loans = loans %>%
   mutate(delin2years = factor(case_when(delinq2yrs > 0 ~ "Y",
                                         delinq2yrs == 0 ~ "N")),
